@@ -80,7 +80,11 @@ The intended workflow is:
 
 ## Running With Docker Compose
 
-The Compose file assumes TeslaCam footage is mounted into the container at `/data/TeslaCam`.
+The Compose file mounts these host folders into the container:
+
+- `./data/TeslaCam` to `/data/TeslaCam`
+- `./data/Thumbnails` to `/data/Thumbnails`
+- `./data/Previews` to `/data/Previews`
 
 ### Start the app
 
@@ -90,7 +94,7 @@ TESLACAM_PATH=/absolute/path/to/TeslaCam docker compose up --build
 
 The app will then be available at `http://localhost:8765`.
 
-If you do not yet have footage ready, Compose falls back to `./TeslaCam` as the mounted source path.
+If you do not set `TESLACAM_PATH`, Compose falls back to `./data/TeslaCam`.
 
 ### Stop the app
 
@@ -104,6 +108,8 @@ docker compose down
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
+
+`/data/Thumbnails` and `/data/Previews` are also mounted for generated image thumbnails and prerendered full-camera previews.
 
 ## TeslaCam Assumptions
 

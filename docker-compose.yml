@@ -9,5 +9,7 @@ services:
     ports:
       - "8765:8080"
     volumes:
-      - ${TESLACAM_PATH:-./TeslaCam}:/data/TeslaCam:ro
+      - ${TESLACAM_PATH:-./data/TeslaCam}:/data/TeslaCam:ro
+      - ./data/Thumbnails:/data/Thumbnails
+      - ./data/Previews:/data/Previews
     restart: unless-stopped
