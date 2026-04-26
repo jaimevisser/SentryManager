@@ -33,6 +33,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 ## Phase 4: Review UI
 
 - [ ] Build an event browser that lists detected TeslaCam sessions.
+- [x] Show street and city metadata from `event.json` on event thumbnail tiles when available.
+- [x] Add a basic event player page linked from the event browser, with single-player sequential playback for the front camera.
 - [ ] Add a review page with synchronized angle playback.
 - [ ] Implement scrub, jump, and clip-boundary handling on the master event timeline.
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
