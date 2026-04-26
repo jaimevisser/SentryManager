@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <section class="hero card">
+        <div class="eyebrow">Initial scaffold</div>
+        <h1>Review multi-angle Tesla footage on one timeline.</h1>
+        <p class="lede">
+            This starter app is set up for a Python backend, Jinja-rendered HTML, and plain JavaScript.
+            The next layers are ingest, proxy generation, synchronized review, and export planning.
+        </p>
+        <div class="hero-grid">
+            <article class="metric-block">
+                <span class="metric-value">{{ event_count }}</span>
+                <span class="metric-label">Detected event folders</span>
+            </article>
+            <article class="metric-block">
+                <span class="metric-value">{{ total_clips }}</span>
+                <span class="metric-label">MP4 clips in preview sample</span>
+            </article>
+            <article class="metric-block">
+                <span class="metric-value">{{ camera_counts|length }}</span>
+                <span class="metric-label">Camera labels observed</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="grid-columns">
+        <article class="card stack gap-md">
+            <div>
+                <div class="section-kicker">Mounted footage</div>
+                <h2>Volume status</h2>
+            </div>
+            <dl class="meta-list">
+                <div>
+                    <dt>Container path</dt>
+                    <dd>{{ footage_root }}</dd>
+                </div>
+                <div>
+                    <dt>Available</dt>
+                    <dd>{{ "yes" if footage_root_exists else "no" }}</dd>
+                </div>
+            </dl>
+            <p class="muted">
+                Point `TESLACAM_PATH` at a TeslaCam directory before bringing the stack up if you want the sample summary to reflect real footage.
+            </p>
+        </article>
+
+        <article class="card stack gap-md">
+            <div>
+                <div class="section-kicker">Workflow shape</div>
+                <h2>Planned pipeline</h2>
+            </div>
+            <ol class="flow-list">
+                <li>Discover source clips and group them into event timelines.</li>
+                <li>Build proxy videos per angle per event for responsive review.</li>
+                <li>Capture edit decisions as timeline segments.</li>
+                <li>Render the final output from original source clips.</li>
+            </ol>
+        </article>
+    </section>
+
+    <section class="card stack gap-md">
+        <div>
+            <div class="section-kicker">Event preview</div>
+            <h2>Sample discovered folders</h2>
+        </div>
+        {% if event_summaries %}
+            <div class="event-grid">
+                {% for event in event_summaries %}
+                    <article class="event-tile">
+                        <div class="event-title-row">
+                            <h3>{{ event.name }}</h3>
+                            <span class="pill">{{ event.clip_count }} clips</span>
+                        </div>
+                        <p class="event-path">{{ event.path }}</p>
+                        <div class="pill-row">
+                            {% for camera in event.cameras %}
+                                <span class="pill pill-soft">{{ camera }}</span>
+                            {% endfor %}
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">
+                No event folders were detected yet. Mount a TeslaCam directory into the container and refresh the page.
+            </p>
+        {% endif %}
+    </section>
+{% endblock %}

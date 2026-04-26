@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: 8080
+      TESLACAM_ROOT: /data/TeslaCam
+    ports:
+      - "8765:8080"
+    volumes:
+      - ${TESLACAM_PATH:-./TeslaCam}:/data/TeslaCam:ro
+    restart: unless-stopped
