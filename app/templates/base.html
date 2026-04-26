@@ -22,7 +22,7 @@
             </a>
             <div class="header-copy">TeslaCam review and export tooling</div>
         </header>
-        <main class="page-shell">
+        <main class="page-shell{% if page_shell_class %} {{ page_shell_class }}{% endif %}">
             {% block content %}{% endblock %}
         </main>
         <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>

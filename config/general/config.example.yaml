@@ -1,4 +1,3 @@
 app_env: development
 storage:
-  max_thumbnail_folder_size_gb: 20
   max_previews_folder_size_gb: 100

@@ -3,7 +3,7 @@
 ## Agent handoff
 
 - The repo currently contains an initial Flask scaffold with Jinja templates, plain JS, Docker, Compose, README, data notes, and adapted AGENTS guidance.
-- Compose publishes the app on host port `8765` and mounts `data/TeslaCam`, `data/Thumbnails`, and `data/Previews` into the container under `/data`.
+- Compose publishes the app on host port `8765` and mounts `data/TeslaCam` and `data/Previews` into the container under `/data`.
 - The starter homepage only performs shallow folder discovery; no real TeslaCam normalization, proxy generation, or export pipeline exists yet.
 - The best next implementation slice is Phase 2: build reliable TeslaCam discovery plus `ffprobe`-backed metadata extraction before adding more UI.
 
@@ -34,9 +34,9 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 
 - [ ] Build an event browser that lists detected TeslaCam sessions.
 - [x] Show street and city metadata from `event.json` on event thumbnail tiles when available.
-- [x] Add a basic event player page linked from the event browser, with single-player sequential playback for the front camera.
-- [ ] Add a review page with synchronized angle playback.
-- [ ] Implement scrub, jump, and clip-boundary handling on the master event timeline.
+- [x] Add a basic event player page linked from the event browser, with sequential event playback and switchable camera views.
+- [x] Add a review page with synchronized angle playback.
+- [x] Implement scrub, jump, and clip-boundary handling on the master event timeline.
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
 
 ## Phase 5: Editing Model

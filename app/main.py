@@ -100,23 +100,31 @@ def create_app() -> Flask:
         if event_summary is None:
             abort(404)
 
-        front_playlist = build_event_playlist(event_dir, footage_root, camera_key="front")
-        playlist_payload = [
-            {
-                "segmentLabel": clip.segment_label,
-                "fileName": clip.file_name,
-                "url": url_for("event_clip", clip_path=clip.file_path),
-            }
-            for clip in front_playlist
-        ]
+        camera_playlists = build_camera_playlists_payload(event_dir, footage_root)
+        if not camera_playlists:
+            abort(404)
+
+        default_view_key = "front" if "front" in camera_playlists else next(iter(camera_playlists))
         return render_template(
             "event_player.html",
             event=event_summary,
-            playlist_camera_label=format_camera_label("front"),
-            playlist_clips=front_playlist,
-            playlist_payload=playlist_payload,
+            view_selector=build_view_selector(camera_playlists),
+            default_view_key=default_view_key,
+            playlist_payload={
+                camera_key: [
+                    {
+                        "segmentKey": clip.segment_key,
+                        "segmentLabel": clip.segment_label,
+                        "fileName": clip.file_name,
+                        "url": url_for("event_clip", clip_path=clip.file_path),
+                    }
+                    for clip in clips
+                ]
+                for camera_key, clips in camera_playlists.items()
+            },
             page_title=f"{event_summary.day_label} Player | SentryManager",
             page_description=f"Review TeslaCam clips for {event_summary.name}.",
+            page_shell_class="page-shell-full",
         )
 
     @app.route("/")
@@ -259,6 +267,26 @@ def build_event_playlist(event_dir: Path, footage_root: Path, camera_key: str) -
             )
         )
     return playlist
+
+
+def build_camera_playlists_payload(event_dir: Path, footage_root: Path) -> dict[str, list[EventClip]]:
+    playlists: dict[str, list[EventClip]] = {}
+    for camera_key in CAMERA_ORDER:
+        playlist = build_event_playlist(event_dir, footage_root, camera_key)
+        if playlist:
+            playlists[camera_key] = playlist
+    return playlists
+
+
+def build_view_selector(camera_playlists: dict[str, list[EventClip]]) -> list[dict[str, str]]:
+    selector = [
+        {"key": camera_key, "label": format_camera_label(camera_key)}
+        for camera_key in CAMERA_ORDER
+        if camera_key in camera_playlists
+    ]
+    if {"back", "left_repeater", "right_repeater"}.issubset(camera_playlists):
+        selector.append({"key": "full_rear", "label": "Full rear"})
+    return selector
 
 
 def load_event_location_label(event_dir: Path) -> str | None:

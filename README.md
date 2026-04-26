@@ -2,6 +2,8 @@
 
 SentryManager is a web application for reviewing Tesla dashcam and Sentry Mode footage, assembling multi-angle edits, and exporting curated clips into a single rendered video.
 
+The current UI is desktop-only for now. Narrow-screen and mobile layouts are not supported yet.
+
 The project is designed around a Python backend that serves Jinja-rendered HTML plus static JavaScript and CSS. The browser handles review and editing workflows, while heavier media work such as indexing, proxy generation, and final render orchestration will happen on the backend with tools such as `ffprobe` and `ffmpeg`.
 
 ## Goals
@@ -18,6 +20,7 @@ This initial scaffold provides:
 
 - A Flask application with Jinja templates and static assets.
 - A landing page that surfaces the mounted TeslaCam root and a lightweight event summary.
+- A desktop-oriented review UI for browsing events and playing footage.
 - Project documentation for product direction, data model, and execution plan.
 - Docker and Compose files for local development and stack integration.
 
@@ -87,7 +90,6 @@ The Compose file mounts these host folders into the container:
 
 - `./config` to `/app/config`
 - `./data/TeslaCam` to `/data/TeslaCam`
-- `./data/Thumbnails` to `/data/Thumbnails`
 - `./data/Previews` to `/data/Previews`
 
 ### Start the app
@@ -110,15 +112,13 @@ docker compose down
 
 - `APP_ENV`: Logical environment name for the app. Defaults to `development`.
 - `TESLACAM_ROOT`: In-container path to the TeslaCam footage root. Defaults to `/data/TeslaCam`.
-- `THUMBNAILS_ROOT`: In-container path to generated thumbnails. Defaults to `/data/Thumbnails`.
 - `PREVIEWS_ROOT`: In-container path to generated previews. Defaults to `/data/Previews`.
-- `MAX_THUMBNAIL_FOLDER_SIZE_GB`: Fallback limit for the thumbnails folder. Defaults to `20`.
 - `MAX_PREVIEWS_FOLDER_SIZE_GB`: Fallback limit for the previews folder. Defaults to `100`.
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
 
-`/data/Thumbnails` and `/data/Previews` are also mounted for generated image thumbnails and prerendered full-camera previews.
+`/data/Previews` is also mounted for prerendered full-camera previews.
 
 ## Configuration
 
@@ -129,7 +129,6 @@ Tracked defaults live in `config/general/config.example.yaml`:
 ```yaml
 app_env: development
 storage:
-	max_thumbnail_folder_size_gb: 20
 	max_previews_folder_size_gb: 100
 ```
 
@@ -137,7 +136,6 @@ For local or test-specific overrides, create `config/general/config.yaml`. It is
 
 The current config surface includes:
 
-- maximum thumbnail folder size in GB
 - maximum previews folder size in GB
 
 Path settings stay in environment variables and Compose mounts rather than the YAML config.

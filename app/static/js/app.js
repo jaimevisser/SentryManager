@@ -10,52 +10,66 @@ function initEventPlayer() {
         return;
     }
 
-    let playlist;
+    let playlistConfig;
     try {
-        playlist = JSON.parse(playlistNode.textContent || "[]");
+        playlistConfig = JSON.parse(playlistNode.textContent || "{}");
     } catch {
         return;
     }
 
+    const allPlaylists = playlistConfig?.playlists;
+    const defaultViewKey = playlistConfig?.defaultViewKey;
+    if (!allPlaylists || typeof allPlaylists !== "object" || !defaultViewKey) {
+        return;
+    }
+
+    function getMasterCameraKey(viewKey) {
+        return viewKey === "full_rear" ? "back" : viewKey;
+    }
+
+    let activeViewKey = defaultViewKey;
+    let activeCameraKey = getMasterCameraKey(activeViewKey);
+    let playlist = allPlaylists[activeCameraKey];
     if (!Array.isArray(playlist) || playlist.length === 0) {
         return;
     }
 
-    const clipLabel = document.querySelector("[data-player-clip-label]");
-    const fileName = document.querySelector("[data-player-file-name]");
-    const progress = document.querySelector("[data-player-progress]");
     const currentTimeNode = document.querySelector("[data-player-current-time]");
     const totalTimeNode = document.querySelector("[data-player-total-time]");
     const scrubber = document.querySelector("[data-player-scrub]");
     const toggleButton = document.querySelector("[data-player-toggle]");
+    const toggleIcon = document.querySelector("[data-player-toggle-icon]");
+    const viewButtons = Array.from(document.querySelectorAll("[data-view-option]"));
+    const viewFrame = document.querySelector("[data-player-view-frame]");
+    const fullRearGrid = document.querySelector("[data-full-rear-grid]");
+    const secondaryPlayers = {
+        left_repeater: document.querySelector('[data-secondary-player="left_repeater"]'),
+        right_repeater: document.querySelector('[data-secondary-player="right_repeater"]'),
+    };
+    const preloadPlayers = {
+        master: document.createElement("video"),
+        left_repeater: document.createElement("video"),
+        right_repeater: document.createElement("video"),
+    };
     let activeIndex = 0;
     let pendingSeekTime = null;
     let pendingEventTime = null;
     let shouldResumeAfterSeek = false;
     let playlistReady = false;
     let isScrubbing = false;
+    let activeLoadToken = 0;
+    let lastPointerCommitAt = 0;
 
-    const durationsPromise = populateClipDurations(playlist, player).catch(() => {
-        playlist.forEach((clip) => {
-            clip.duration = Number.isFinite(clip.duration) ? clip.duration : 0;
-        });
-        return playlist;
-    });
+    const durationCache = new Map();
 
-    function syncClipMeta(index) {
-        const clip = playlist[index];
-        if (!clip) {
-            return;
-        }
-        if (clipLabel) {
-            clipLabel.textContent = clip.segmentLabel;
-        }
-        if (fileName) {
-            fileName.textContent = clip.fileName;
-        }
-        if (progress) {
-            progress.textContent = `Clip ${index + 1} of ${playlist.length}`;
-        }
+    for (const preloadPlayer of Object.values(preloadPlayers)) {
+        preloadPlayer.preload = "auto";
+        preloadPlayer.muted = true;
+        preloadPlayer.playsInline = true;
+    }
+
+    function isFullRearView() {
+        return activeViewKey === "full_rear";
     }
 
     function formatClockTime(totalSeconds) {
@@ -78,7 +92,6 @@ function initEventPlayer() {
     }
 
     function syncTimelineUI() {
-        const clip = playlist[activeIndex];
         const eventTime = pendingEventTime ?? (getClipStart(activeIndex) + player.currentTime);
         const totalDuration = getTotalDuration();
 
@@ -93,10 +106,23 @@ function initEventPlayer() {
             scrubber.value = String(Math.min(eventTime, totalDuration));
         }
         if (toggleButton) {
-            toggleButton.textContent = player.paused ? "Play" : "Pause";
+            const isPaused = player.paused;
+            const nextLabel = isPaused ? "Play" : "Pause";
+            toggleButton.setAttribute("aria-label", nextLabel);
+            if (toggleIcon) {
+                toggleIcon.src = isPaused ? toggleButton.dataset.playIcon : toggleButton.dataset.pauseIcon;
+            }
         }
-        if (progress && clip) {
-            progress.textContent = `Clip ${activeIndex + 1} of ${playlist.length} · ${clip.segmentLabel}`;
+        if (viewFrame) {
+            viewFrame.dataset.activeView = activeViewKey;
+        }
+        if (fullRearGrid) {
+            fullRearGrid.hidden = !isFullRearView();
+        }
+        for (const button of viewButtons) {
+            const isActive = button.dataset.viewOption === activeViewKey;
+            button.classList.toggle("is-active", isActive);
+            button.setAttribute("aria-pressed", isActive ? "true" : "false");
         }
     }
 
@@ -122,39 +148,222 @@ function initEventPlayer() {
         const target = findClipForEventTime(clampedTime);
         const wantsPlayback = !player.paused;
         pendingEventTime = clampedTime;
+        loadClip(target.index, { autoplay: false, targetTime: target.offset, secondaryShouldPlay: wantsPlayback });
+    }
 
-        if (target.index === activeIndex) {
-            player.currentTime = target.offset;
-            pendingEventTime = null;
-            syncTimelineUI();
+    function findClipBySegmentKey(cameraKey, segmentKey, fallbackIndex) {
+        const cameraPlaylist = allPlaylists[cameraKey];
+        if (!Array.isArray(cameraPlaylist) || cameraPlaylist.length === 0) {
+            return null;
+        }
+
+        const matchedClip = cameraPlaylist.find((clip) => clip.segmentKey === segmentKey);
+        if (matchedClip) {
+            return matchedClip;
+        }
+
+        if (fallbackIndex >= 0 && fallbackIndex < cameraPlaylist.length) {
+            return cameraPlaylist[fallbackIndex];
+        }
+
+        return cameraPlaylist[0];
+    }
+
+    function syncSecondaryPlayers(offset, shouldPlay) {
+        if (!isFullRearView()) {
+            for (const secondaryPlayer of Object.values(secondaryPlayers)) {
+                if (secondaryPlayer) {
+                    secondaryPlayer.pause();
+                }
+            }
             return;
         }
 
-        pendingSeekTime = target.offset;
-        shouldResumeAfterSeek = wantsPlayback;
-        loadClip(target.index, false);
+        const masterClip = playlist[activeIndex];
+        if (!masterClip) {
+            return;
+        }
+
+        for (const [cameraKey, secondaryPlayer] of Object.entries(secondaryPlayers)) {
+            if (!secondaryPlayer) {
+                continue;
+            }
+
+            const targetClip = findClipBySegmentKey(cameraKey, masterClip.segmentKey, activeIndex);
+            if (!targetClip) {
+                secondaryPlayer.pause();
+                continue;
+            }
+
+            secondaryPlayer.dataset.pendingTime = String(offset);
+            secondaryPlayer.dataset.shouldPlay = shouldPlay ? "true" : "false";
+            if (!secondaryPlayer.currentSrc || !secondaryPlayer.currentSrc.endsWith(targetClip.url)) {
+                secondaryPlayer.src = targetClip.url;
+                secondaryPlayer.load();
+                if (shouldPlay) {
+                    const playPromise = secondaryPlayer.play();
+                    if (playPromise && typeof playPromise.catch === "function") {
+                        playPromise.catch(() => {});
+                    }
+                }
+                continue;
+            }
+
+            if (Math.abs(secondaryPlayer.currentTime - offset) > 0.35) {
+                secondaryPlayer.currentTime = offset;
+            }
+            if (shouldPlay) {
+                const playPromise = secondaryPlayer.play();
+                if (playPromise && typeof playPromise.catch === "function") {
+                    playPromise.catch(() => {});
+                }
+                continue;
+            }
+            secondaryPlayer.pause();
+        }
     }
 
-    function loadClip(index, autoplay = false) {
+    function synchronizeSecondaryDrift() {
+        if (!isFullRearView()) {
+            return;
+        }
+
+        for (const secondaryPlayer of Object.values(secondaryPlayers)) {
+            if (!secondaryPlayer || secondaryPlayer.readyState < 2) {
+                continue;
+            }
+
+            if (Math.abs(secondaryPlayer.currentTime - player.currentTime) > 0.35) {
+                secondaryPlayer.currentTime = player.currentTime;
+            }
+        }
+    }
+
+    function clearSecondaryPlayers(resetSource = false) {
+        for (const secondaryPlayer of Object.values(secondaryPlayers)) {
+            if (!secondaryPlayer) {
+                continue;
+            }
+
+            secondaryPlayer.pause();
+            delete secondaryPlayer.dataset.pendingTime;
+            delete secondaryPlayer.dataset.shouldPlay;
+            if (!resetSource) {
+                continue;
+            }
+            secondaryPlayer.removeAttribute("src");
+            secondaryPlayer.load();
+        }
+    }
+
+    function getViewTargets(index) {
+        const masterClip = playlist[index];
+        if (!masterClip) {
+            return [];
+        }
+
+        const targets = [{ element: player, clip: masterClip }];
+        if (!isFullRearView()) {
+            return targets;
+        }
+
+        for (const [cameraKey, secondaryPlayer] of Object.entries(secondaryPlayers)) {
+            if (!secondaryPlayer) {
+                continue;
+            }
+
+            const clip = findClipBySegmentKey(cameraKey, masterClip.segmentKey, index);
+            if (clip) {
+                targets.push({ element: secondaryPlayer, clip });
+            }
+        }
+        return targets;
+    }
+
+    function applyPendingPlayback(videoElement) {
+        const loadToken = Number.parseInt(videoElement.dataset.loadToken || "0", 10);
+        if (loadToken !== activeLoadToken) {
+            return;
+        }
+
+        const pendingTime = Number.parseFloat(videoElement.dataset.pendingTime || "0");
+        if (!Number.isNaN(pendingTime) && Math.abs(videoElement.currentTime - pendingTime) > 0.1) {
+            videoElement.currentTime = pendingTime;
+        }
+
+        if (videoElement === player) {
+            pendingEventTime = null;
+            syncTimelineUI();
+        }
+
+        if (videoElement.dataset.shouldPlay === "true") {
+            const playPromise = videoElement.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {});
+            }
+            return;
+        }
+        videoElement.pause();
+    }
+
+    function ensureVideoReady(videoElement, url) {
+        if (!videoElement.currentSrc || !videoElement.currentSrc.endsWith(url)) {
+            videoElement.src = url;
+        }
+        videoElement.load();
+
+        if (videoElement.readyState >= 1) {
+            applyPendingPlayback(videoElement);
+        }
+    }
+
+    function loadViewAtIndex(index, targetTime, shouldPlay) {
+        const targets = getViewTargets(index);
+        if (targets.length === 0) {
+            return;
+        }
+
+        const loadToken = ++activeLoadToken;
+        activeIndex = index;
+        syncTimelineUI();
+
+        for (const { element, clip } of targets) {
+            element.dataset.loadToken = String(loadToken);
+            element.dataset.pendingTime = String(targetTime);
+            element.dataset.shouldPlay = shouldPlay ? "true" : "false";
+            ensureVideoReady(element, clip.url);
+        }
+
+        preloadNextSegment(index + 1);
+    }
+
+    function preloadNextSegment(nextIndex) {
+        if (nextIndex < 0 || nextIndex >= playlist.length) {
+            return;
+        }
+
+        const targets = getViewTargets(nextIndex);
+        for (const { element, clip } of targets) {
+            const preloaderKey = element === player ? "master" : element.dataset.secondaryPlayer;
+            const preloader = preloaderKey ? preloadPlayers[preloaderKey] : null;
+            if (!preloader) {
+                continue;
+            }
+            if (!preloader.currentSrc || !preloader.currentSrc.endsWith(clip.url)) {
+                preloader.src = clip.url;
+            }
+            preloader.load();
+        }
+    }
+
+    function loadClip(index, options = {}) {
+        const { autoplay = false, targetTime = 0, secondaryShouldPlay = autoplay } = options;
         const clip = playlist[index];
         if (!clip) {
             return;
         }
 
-        activeIndex = index;
-        syncClipMeta(index);
-        if (player.currentSrc !== clip.url) {
-            player.src = clip.url;
-        }
-        player.load();
-        syncTimelineUI();
-
-        if (autoplay) {
-            const playPromise = player.play();
-            if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(() => {});
-            }
-        }
+        loadViewAtIndex(index, targetTime, secondaryShouldPlay);
     }
 
     player.addEventListener("ended", () => {
@@ -162,28 +371,36 @@ function initEventPlayer() {
             syncTimelineUI();
             return;
         }
-        loadClip(activeIndex + 1, true);
+        loadClip(activeIndex + 1, { autoplay: true, targetTime: 0, secondaryShouldPlay: true });
     });
 
     player.addEventListener("loadedmetadata", () => {
-        if (pendingSeekTime !== null) {
-            player.currentTime = pendingSeekTime;
-            pendingSeekTime = null;
-        }
-        if (shouldResumeAfterSeek) {
-            shouldResumeAfterSeek = false;
-            const playPromise = player.play();
-            if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(() => {});
-            }
-        }
-        pendingEventTime = null;
+        applyPendingPlayback(player);
         syncTimelineUI();
     });
 
-    player.addEventListener("timeupdate", syncTimelineUI);
-    player.addEventListener("play", syncTimelineUI);
-    player.addEventListener("pause", syncTimelineUI);
+    player.addEventListener("timeupdate", () => {
+        synchronizeSecondaryDrift();
+        syncTimelineUI();
+    });
+    player.addEventListener("play", () => {
+        syncSecondaryPlayers(player.currentTime, true);
+        syncTimelineUI();
+    });
+    player.addEventListener("pause", () => {
+        syncSecondaryPlayers(player.currentTime, false);
+        syncTimelineUI();
+    });
+
+    for (const secondaryPlayer of Object.values(secondaryPlayers)) {
+        if (!secondaryPlayer) {
+            continue;
+        }
+
+        secondaryPlayer.addEventListener("loadedmetadata", () => {
+            applyPendingPlayback(secondaryPlayer);
+        });
+    }
 
     if (toggleButton) {
         toggleButton.addEventListener("click", () => {
@@ -228,8 +445,19 @@ function initEventPlayer() {
         });
 
         scrubber.addEventListener("input", previewScrubTime);
-        scrubber.addEventListener("change", commitScrubTime);
-        scrubber.addEventListener("pointerup", commitScrubTime);
+        scrubber.addEventListener("change", () => {
+            if (isScrubbing) {
+                return;
+            }
+            if (performance.now() - lastPointerCommitAt < 250) {
+                return;
+            }
+            commitScrubTime();
+        });
+        scrubber.addEventListener("pointerup", () => {
+            lastPointerCommitAt = performance.now();
+            commitScrubTime();
+        });
         scrubber.addEventListener("keyup", (event) => {
             if (["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) {
                 commitScrubTime();
@@ -243,22 +471,71 @@ function initEventPlayer() {
         });
     }
 
-    durationsPromise.then(() => {
+    function populatePlaylistDurations(playlistToPopulate) {
+        return populateClipDurations(playlistToPopulate, player, durationCache, syncTimelineUI).catch(() => {
+            playlistToPopulate.forEach((clip) => {
+                clip.duration = Number.isFinite(clip.duration) ? clip.duration : 0;
+            });
+            return playlistToPopulate;
+        });
+    }
+
+    function switchView(nextViewKey) {
+        const nextCameraKey = getMasterCameraKey(nextViewKey);
+        if (!allPlaylists[nextCameraKey] || nextViewKey === activeViewKey) {
+            return;
+        }
+
+        const currentEventTime = pendingEventTime ?? (getClipStart(activeIndex) + player.currentTime);
+        const wantsPlayback = !player.paused;
+        if (activeViewKey === "full_rear" && nextViewKey !== "full_rear") {
+            clearSecondaryPlayers(true);
+        }
+        activeViewKey = nextViewKey;
+        activeCameraKey = nextCameraKey;
+        playlist = allPlaylists[activeCameraKey];
+        activeIndex = 0;
+        pendingSeekTime = null;
+        pendingEventTime = currentEventTime;
+        shouldResumeAfterSeek = false;
+        playlistReady = false;
+        syncTimelineUI();
+
+        populatePlaylistDurations(playlist).then(() => {
+            playlistReady = true;
+            pendingEventTime = currentEventTime;
+            if (wantsPlayback) {
+                shouldResumeAfterSeek = true;
+            }
+            seekToEventTime(currentEventTime);
+        });
+    }
+
+    for (const button of viewButtons) {
+        button.addEventListener("click", () => {
+            const nextViewKey = button.dataset.viewOption;
+            if (!nextViewKey) {
+                return;
+            }
+            switchView(nextViewKey);
+        });
+    }
+
+    populatePlaylistDurations(playlist).then(() => {
         playlistReady = true;
         syncTimelineUI();
     });
 
-    syncClipMeta(activeIndex);
     syncTimelineUI();
 }
 
-async function populateClipDurations(playlist, player) {
+async function populateClipDurations(playlist, player, durationCache, onDurationUpdate) {
     if (playlist.length === 0) {
         return playlist;
     }
 
     const activeUrl = playlist[0].url;
-    const standardDuration = activeUrl ? await getPlayerMetadataDuration(player, activeUrl) : 0;
+    const standardDuration = activeUrl ? await getStandardDuration(player, activeUrl, durationCache) : 0;
 
     playlist.forEach((clip) => {
         clip.duration = standardDuration;
@@ -266,18 +543,49 @@ async function populateClipDurations(playlist, player) {
 
     if (playlist.length > 1) {
         const lastIndex = playlist.length - 1;
-        const lastDuration = await loadClipDuration(playlist[lastIndex].url);
-        playlist[lastIndex].duration = lastDuration || standardDuration;
+        loadClipDuration(playlist[lastIndex].url, durationCache).then((lastDuration) => {
+            playlist[lastIndex].duration = lastDuration || standardDuration;
+            if (typeof onDurationUpdate === "function") {
+                onDurationUpdate();
+            }
+        });
     }
 
     return playlist;
 }
 
-function getPlayerMetadataDuration(player, expectedUrl) {
+async function getStandardDuration(player, expectedUrl, durationCache) {
+    const cached = durationCache.get(expectedUrl);
+    if (cached !== undefined) {
+        return cached;
+    }
+
+    const cachedDuration = Array.from(durationCache.values()).find((duration) => duration > 0);
+    if (cachedDuration !== undefined) {
+        durationCache.set(expectedUrl, cachedDuration);
+        return cachedDuration;
+    }
+
+    if (Number.isFinite(player.duration) && player.duration > 0) {
+        durationCache.set(expectedUrl, player.duration);
+        return player.duration;
+    }
+
+    return getPlayerMetadataDuration(player, expectedUrl, durationCache);
+}
+
+function getPlayerMetadataDuration(player, expectedUrl, durationCache) {
+    const cached = durationCache.get(expectedUrl);
+    if (cached !== undefined) {
+        return Promise.resolve(cached);
+    }
+
     return new Promise((resolve) => {
         const finish = (duration) => {
             cleanup();
-            resolve(Number.isFinite(duration) ? duration : 0);
+            const safeDuration = Number.isFinite(duration) ? duration : 0;
+            durationCache.set(expectedUrl, safeDuration);
+            resolve(safeDuration);
         };
 
         const onLoadedMetadata = () => {
@@ -306,13 +614,19 @@ function getPlayerMetadataDuration(player, expectedUrl) {
     });
 }
 
-function loadClipDuration(url) {
+function loadClipDuration(url, durationCache) {
+    const cached = durationCache.get(url);
+    if (cached !== undefined) {
+        return Promise.resolve(cached);
+    }
+
     return new Promise((resolve) => {
         const probe = document.createElement("video");
         probe.preload = "metadata";
         probe.src = url;
         const timeoutId = window.setTimeout(() => {
             cleanup();
+            durationCache.set(url, 0);
             resolve(0);
         }, 4000);
 
@@ -327,6 +641,7 @@ function loadClipDuration(url) {
             () => {
                 const duration = Number.isFinite(probe.duration) ? probe.duration : 0;
                 cleanup();
+                durationCache.set(url, duration);
                 resolve(duration);
             },
             { once: true }
@@ -336,6 +651,7 @@ function loadClipDuration(url) {
             "error",
             () => {
                 cleanup();
+                durationCache.set(url, 0);
                 resolve(0);
             },
             { once: true }

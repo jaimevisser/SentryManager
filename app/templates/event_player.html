@@ -1,49 +1,68 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <section class="card stack gap-md player-hero-card">
-        <a class="back-link" href="{{ url_for('index') }}">Back to event browser</a>
-        <div class="player-header-grid">
-            <div>
-                <div class="section-kicker">{{ event.category }}</div>
-                <h1 class="player-title">{{ event.name }}</h1>
-                <p class="lede player-lede">
-                    Review this event as one continuous {{ playlist_camera_label|lower }}-camera pass. The player advances through the event clips in timestamp order.
-                </p>
-            </div>
-            <div class="player-summary-card">
-                <div class="overview-meta-label">Event details</div>
-                <div class="player-summary-value">{{ event.day_label }} at {{ event.time_label }}</div>
-                {% if event.location_label %}
-                    <div class="player-summary-meta">{{ event.location_label }}</div>
-                {% endif %}
-                <div class="pill-row">
-                    <span class="pill">{{ playlist_clips|length }} {{ playlist_camera_label|lower }} clips</span>
-                    <span class="pill pill-soft">single player</span>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="card player-stage player-stage-single">
-        <div class="player-stage-header">
-            <div>
-                <div class="section-kicker">Player</div>
-                <h2>{{ playlist_camera_label }}</h2>
-            </div>
-            {% if playlist_clips %}
-                <div class="player-stage-meta" data-player-progress>Clip 1 of {{ playlist_clips|length }}</div>
+    <section class="player-detail-page">
+        <div class="player-meta-line">
+            <span>{{ event.day_label }}</span>
+            <span>{{ event.time_label }}</span>
+            {% if event.location_label %}
+                <span>{{ event.location_label }}</span>
             {% endif %}
         </div>
+        {% if view_selector %}
+            <div class="camera-selector" role="tablist" aria-label="Camera selector">
+                {% for view in view_selector %}
+                    <button class="camera-selector-button{% if view.key == default_view_key %} is-active{% endif %}"
+                            type="button"
+                            data-view-option="{{ view.key }}"
+                            aria-pressed="{{ 'true' if view.key == default_view_key else 'false' }}">
+                        {{ view.label }}
+                    </button>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </section>
 
-        {% if playlist_clips %}
-            <div class="player-video-shell">
-                <video class="event-player-video" data-event-player preload="metadata" playsinline>
-                    <source src="{{ playlist_payload[0].url }}" type="video/mp4">
-                </video>
+    <section class="player-stage player-stage-single">
+        {% if default_view_key %}
+            <div class="player-view-frame" data-player-view-frame data-active-view="{{ default_view_key }}">
+                <div class="player-video-shell player-video-shell-main">
+                    <video class="event-player-video" data-event-player preload="metadata" playsinline>
+                        <source src="{{ playlist_payload[default_view_key][0].url }}" type="video/mp4">
+                    </video>
+                </div>
+                {% if 'left_repeater' in playlist_payload and 'right_repeater' in playlist_payload %}
+                    <div class="player-secondary-grid" data-full-rear-grid {% if default_view_key != 'full_rear' %}hidden{% endif %}>
+                        <div class="player-video-shell player-video-shell-secondary">
+                            <video class="event-player-video event-player-video-secondary"
+                                   data-secondary-player="right_repeater"
+                                   preload="metadata"
+                                   playsinline
+                                   muted></video>
+                        </div>
+                        <div class="player-video-shell player-video-shell-secondary">
+                            <video class="event-player-video event-player-video-secondary"
+                                   data-secondary-player="left_repeater"
+                                   preload="metadata"
+                                   playsinline
+                                   muted></video>
+                        </div>
+                    </div>
+                {% endif %}
             </div>
             <div class="player-controls" data-player-controls>
-                <button class="player-control-button" type="button" data-player-toggle>Play</button>
+                <button class="player-control-button"
+                        type="button"
+                        data-player-toggle
+                        aria-label="Play"
+                        data-play-icon="{{ url_for('static', filename='mdi/play.svg') }}"
+                        data-pause-icon="{{ url_for('static', filename='mdi/pause.svg') }}">
+                    <img class="player-control-icon"
+                         data-player-toggle-icon
+                         src="{{ url_for('static', filename='mdi/play.svg') }}"
+                         alt=""
+                         aria-hidden="true">
+                </button>
                 <div class="player-scrub-group">
                     <input class="player-scrub-input"
                            type="range"
@@ -59,17 +78,9 @@
                     </div>
                 </div>
             </div>
-            <div class="player-status-row">
-                <div>
-                    <div class="overview-meta-label">Now playing</div>
-                    <div class="player-clip-label" data-player-clip-label>{{ playlist_clips[0].segment_label }}</div>
-                    <div class="clip-file-name" data-player-file-name>{{ playlist_clips[0].file_name }}</div>
-                </div>
-                <div class="player-summary-meta">The event timeline scrubber spans all front-camera clips and jumps across file boundaries.</div>
-            </div>
-            <script id="event-playlist" type="application/json">{{ playlist_payload|tojson }}</script>
+            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload}|tojson }}</script>
         {% else %}
-            <div class="player-empty-state">No {{ playlist_camera_label|lower }} clips were found for this event yet.</div>
+            <div class="player-empty-state">No camera clips were found for this event yet.</div>
         {% endif %}
     </section>
 {% endblock %}
