@@ -31,18 +31,18 @@
                         <source src="{{ playlist_payload[default_view_key][0].url }}" type="video/mp4">
                     </video>
                 </div>
-                {% if 'left_repeater' in playlist_payload and 'right_repeater' in playlist_payload %}
-                    <div class="player-secondary-grid" data-full-rear-grid {% if default_view_key != 'full_rear' %}hidden{% endif %}>
+                {% if ('left_repeater' in playlist_payload and 'right_repeater' in playlist_payload) or ('left_pillar' in playlist_payload and 'right_pillar' in playlist_payload) %}
+                    <div class="player-secondary-grid" data-composite-grid {% if default_view_key not in ['full_rear', 'full_front'] %}hidden{% endif %}>
                         <div class="player-video-shell player-video-shell-secondary">
                             <video class="event-player-video event-player-video-secondary"
-                                   data-secondary-player="right_repeater"
+                                   data-secondary-slot="left"
                                    preload="metadata"
                                    playsinline
                                    muted></video>
                         </div>
                         <div class="player-video-shell player-video-shell-secondary">
                             <video class="event-player-video event-player-video-secondary"
-                                   data-secondary-player="left_repeater"
+                                   data-secondary-slot="right"
                                    preload="metadata"
                                    playsinline
                                    muted></video>
@@ -64,21 +64,24 @@
                          aria-hidden="true">
                 </button>
                 <div class="player-scrub-group">
-                    <input class="player-scrub-input"
-                           type="range"
-                           min="0"
-                           max="1"
-                           value="0"
-                           step="0.01"
-                           data-player-scrub
-                           aria-label="Scrub through event timeline">
+                    <div class="player-scrub-track">
+                        <div class="player-scrub-marker" data-player-event-marker hidden></div>
+                        <input class="player-scrub-input"
+                               type="range"
+                               min="0"
+                               max="1"
+                               value="0"
+                               step="0.01"
+                               data-player-scrub
+                               aria-label="Scrub through event timeline">
+                    </div>
                     <div class="player-time-row">
                         <span data-player-current-time>0:00</span>
                         <span data-player-total-time>--:--</span>
                     </div>
                 </div>
             </div>
-            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload}|tojson }}</script>
+            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time}|tojson }}</script>
         {% else %}
             <div class="player-empty-state">No camera clips were found for this event yet.</div>
         {% endif %}

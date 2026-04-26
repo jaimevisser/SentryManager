@@ -19,12 +19,37 @@ function initEventPlayer() {
 
     const allPlaylists = playlistConfig?.playlists;
     const defaultViewKey = playlistConfig?.defaultViewKey;
+    const rawEventMarkerTime = playlistConfig?.eventMarkerTime;
+    const eventMarkerTime = typeof rawEventMarkerTime === "number" && Number.isFinite(rawEventMarkerTime)
+        ? rawEventMarkerTime
+        : null;
     if (!allPlaylists || typeof allPlaylists !== "object" || !defaultViewKey) {
         return;
     }
 
+    const compositeViews = {
+        full_rear: {
+            master: "back",
+            secondarySlots: {
+                left: "right_repeater",
+                right: "left_repeater",
+            },
+        },
+        full_front: {
+            master: "front",
+            secondarySlots: {
+                left: "left_pillar",
+                right: "right_pillar",
+            },
+        },
+    };
+
+    function getCompositeView(viewKey) {
+        return compositeViews[viewKey] || null;
+    }
+
     function getMasterCameraKey(viewKey) {
-        return viewKey === "full_rear" ? "back" : viewKey;
+        return getCompositeView(viewKey)?.master || viewKey;
     }
 
     let activeViewKey = defaultViewKey;
@@ -37,19 +62,20 @@ function initEventPlayer() {
     const currentTimeNode = document.querySelector("[data-player-current-time]");
     const totalTimeNode = document.querySelector("[data-player-total-time]");
     const scrubber = document.querySelector("[data-player-scrub]");
+    const eventMarker = document.querySelector("[data-player-event-marker]");
     const toggleButton = document.querySelector("[data-player-toggle]");
     const toggleIcon = document.querySelector("[data-player-toggle-icon]");
     const viewButtons = Array.from(document.querySelectorAll("[data-view-option]"));
     const viewFrame = document.querySelector("[data-player-view-frame]");
-    const fullRearGrid = document.querySelector("[data-full-rear-grid]");
+    const compositeGrid = document.querySelector("[data-composite-grid]");
     const secondaryPlayers = {
-        left_repeater: document.querySelector('[data-secondary-player="left_repeater"]'),
-        right_repeater: document.querySelector('[data-secondary-player="right_repeater"]'),
+        left: document.querySelector('[data-secondary-slot="left"]'),
+        right: document.querySelector('[data-secondary-slot="right"]'),
     };
     const preloadPlayers = {
         master: document.createElement("video"),
-        left_repeater: document.createElement("video"),
-        right_repeater: document.createElement("video"),
+        left: document.createElement("video"),
+        right: document.createElement("video"),
     };
     let activeIndex = 0;
     let pendingSeekTime = null;
@@ -68,8 +94,8 @@ function initEventPlayer() {
         preloadPlayer.playsInline = true;
     }
 
-    function isFullRearView() {
-        return activeViewKey === "full_rear";
+    function isCompositeView() {
+        return getCompositeView(activeViewKey) !== null;
     }
 
     function formatClockTime(totalSeconds) {
@@ -105,6 +131,15 @@ function initEventPlayer() {
             scrubber.max = String(totalDuration);
             scrubber.value = String(Math.min(eventTime, totalDuration));
         }
+        if (eventMarker) {
+            if (eventMarkerTime === null || totalDuration <= 0) {
+                eventMarker.hidden = true;
+            } else {
+                const markerTime = Math.min(Math.max(eventMarkerTime, 0), totalDuration);
+                eventMarker.style.left = `${(markerTime / totalDuration) * 100}%`;
+                eventMarker.hidden = false;
+            }
+        }
         if (toggleButton) {
             const isPaused = player.paused;
             const nextLabel = isPaused ? "Play" : "Pause";
@@ -116,8 +151,8 @@ function initEventPlayer() {
         if (viewFrame) {
             viewFrame.dataset.activeView = activeViewKey;
         }
-        if (fullRearGrid) {
-            fullRearGrid.hidden = !isFullRearView();
+        if (compositeGrid) {
+            compositeGrid.hidden = !isCompositeView();
         }
         for (const button of viewButtons) {
             const isActive = button.dataset.viewOption === activeViewKey;
@@ -170,7 +205,8 @@ function initEventPlayer() {
     }
 
     function syncSecondaryPlayers(offset, shouldPlay) {
-        if (!isFullRearView()) {
+        const compositeView = getCompositeView(activeViewKey);
+        if (!compositeView) {
             for (const secondaryPlayer of Object.values(secondaryPlayers)) {
                 if (secondaryPlayer) {
                     secondaryPlayer.pause();
@@ -184,8 +220,14 @@ function initEventPlayer() {
             return;
         }
 
-        for (const [cameraKey, secondaryPlayer] of Object.entries(secondaryPlayers)) {
+        for (const [slotKey, secondaryPlayer] of Object.entries(secondaryPlayers)) {
             if (!secondaryPlayer) {
+                continue;
+            }
+
+            const cameraKey = compositeView.secondarySlots[slotKey];
+            if (!cameraKey) {
+                secondaryPlayer.pause();
                 continue;
             }
 
@@ -224,7 +266,7 @@ function initEventPlayer() {
     }
 
     function synchronizeSecondaryDrift() {
-        if (!isFullRearView()) {
+        if (!isCompositeView()) {
             return;
         }
 
@@ -263,12 +305,18 @@ function initEventPlayer() {
         }
 
         const targets = [{ element: player, clip: masterClip }];
-        if (!isFullRearView()) {
+        const compositeView = getCompositeView(activeViewKey);
+        if (!compositeView) {
             return targets;
         }
 
-        for (const [cameraKey, secondaryPlayer] of Object.entries(secondaryPlayers)) {
+        for (const [slotKey, secondaryPlayer] of Object.entries(secondaryPlayers)) {
             if (!secondaryPlayer) {
+                continue;
+            }
+
+            const cameraKey = compositeView.secondarySlots[slotKey];
+            if (!cameraKey) {
                 continue;
             }
 
@@ -344,7 +392,7 @@ function initEventPlayer() {
 
         const targets = getViewTargets(nextIndex);
         for (const { element, clip } of targets) {
-            const preloaderKey = element === player ? "master" : element.dataset.secondaryPlayer;
+            const preloaderKey = element === player ? "master" : element.dataset.secondarySlot;
             const preloader = preloaderKey ? preloadPlayers[preloaderKey] : null;
             if (!preloader) {
                 continue;
@@ -488,7 +536,7 @@ function initEventPlayer() {
 
         const currentEventTime = pendingEventTime ?? (getClipStart(activeIndex) + player.currentTime);
         const wantsPlayback = !player.paused;
-        if (activeViewKey === "full_rear" && nextViewKey !== "full_rear") {
+        if (isCompositeView() && !getCompositeView(nextViewKey)) {
             clearSecondaryPlayers(true);
         }
         activeViewKey = nextViewKey;

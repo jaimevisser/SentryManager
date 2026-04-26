@@ -43,6 +43,7 @@ class EventSummary:
     time_label: str
     thumbnail_path: str | None
     location_label: str | None
+    trigger_offset_seconds: float | None
 
 
 @dataclass
@@ -122,6 +123,7 @@ def create_app() -> Flask:
                 ]
                 for camera_key, clips in camera_playlists.items()
             },
+            event_marker_time=event_summary.trigger_offset_seconds,
             page_title=f"{event_summary.day_label} Player | SentryManager",
             page_description=f"Review TeslaCam clips for {event_summary.name}.",
             page_shell_class="page-shell-full",
@@ -190,11 +192,17 @@ def summarize_event_dir(event_dir: Path, footage_root: Path) -> EventSummary | N
         return None
 
     cameras = sorted({infer_camera_name(path.name) for path in clip_files}, key=camera_sort_key)
+    segment_timestamps = [
+        infer_event_timestamp(split_clip_stem(path.stem)[0])
+        for path in clip_files
+    ]
+    first_segment_timestamp = min((timestamp for timestamp in segment_timestamps if timestamp is not None), default=None)
     relative_path = event_dir.relative_to(footage_root) if event_dir != footage_root else Path(".")
     timestamp = infer_event_timestamp(event_dir.name)
     category = relative_path.parts[0] if len(relative_path.parts) > 1 else "TeslaCam"
     thumbnail_file = event_dir / "thumb.png"
     location_label = load_event_location_label(event_dir)
+    trigger_offset_seconds = load_event_trigger_offset_seconds(event_dir, first_segment_timestamp)
     return EventSummary(
         name=event_dir.name if event_dir != footage_root else footage_root.name,
         path=str(relative_path),
@@ -206,6 +214,7 @@ def summarize_event_dir(event_dir: Path, footage_root: Path) -> EventSummary | N
         time_label=format_time_label(timestamp),
         thumbnail_path=str(relative_path) if thumbnail_file.is_file() else None,
         location_label=location_label,
+        trigger_offset_seconds=trigger_offset_seconds,
     )
 
 
@@ -286,6 +295,8 @@ def build_view_selector(camera_playlists: dict[str, list[EventClip]]) -> list[di
     ]
     if {"back", "left_repeater", "right_repeater"}.issubset(camera_playlists):
         selector.append({"key": "full_rear", "label": "Full rear"})
+    if {"front", "left_pillar", "right_pillar"}.issubset(camera_playlists):
+        selector.append({"key": "full_front", "label": "Full front"})
     return selector
 
 
@@ -308,6 +319,34 @@ def load_event_location_label(event_dir: Path) -> str | None:
     if not location_parts:
         return None
     return ", ".join(location_parts)
+
+
+def load_event_trigger_offset_seconds(event_dir: Path, first_segment_timestamp: datetime | None) -> float | None:
+    if first_segment_timestamp is None:
+        return None
+
+    event_file = event_dir / "event.json"
+    if not event_file.is_file():
+        return None
+
+    try:
+        payload = json.loads(event_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    raw_timestamp = payload.get("timestamp")
+    if not isinstance(raw_timestamp, str) or not raw_timestamp.strip():
+        return None
+
+    try:
+        trigger_timestamp = datetime.fromisoformat(raw_timestamp.strip())
+    except ValueError:
+        return None
+
+    return max(0.0, (trigger_timestamp - first_segment_timestamp).total_seconds())
 
 
 def _is_within_root(path: Path, root: Path) -> bool:
