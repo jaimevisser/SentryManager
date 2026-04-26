@@ -14,7 +14,7 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Create the initial Flask app structure with Jinja templates and static assets.
 - [x] Add Docker and Compose files with a mounted TeslaCam footage volume.
 - [x] Write the core project documentation and agent guidance.
-- [ ] Add basic application configuration management for local, test, and production environments.
+- [x] Add basic application configuration management for local, test, and production environments.
 
 ## Phase 2: Footage Discovery
 

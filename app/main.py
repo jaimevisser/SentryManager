@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 from flask import Flask, render_template
+
+from .config import apply_settings
 
 
 @dataclass
@@ -18,7 +19,7 @@ class EventSummary:
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    app.config["TESLACAM_ROOT"] = os.environ.get("TESLACAM_ROOT", "/data/TeslaCam")
+    apply_settings(app)
 
     @app.route("/")
     def index() -> str:

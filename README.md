@@ -62,8 +62,11 @@ The intended workflow is:
 ├── Dockerfile
 ├── README.md
 ├── TODO.md
+├── config/
+│   └── general/config.example.yaml
 ├── app/
 │   ├── __init__.py
+│   ├── config.py
 │   ├── main.py
 │   ├── static/
 │   │   ├── css/common.css
@@ -82,6 +85,7 @@ The intended workflow is:
 
 The Compose file mounts these host folders into the container:
 
+- `./config` to `/app/config`
 - `./data/TeslaCam` to `/data/TeslaCam`
 - `./data/Thumbnails` to `/data/Thumbnails`
 - `./data/Previews` to `/data/Previews`
@@ -104,12 +108,41 @@ docker compose down
 
 ## Environment Variables
 
+- `APP_ENV`: Logical environment name for the app. Defaults to `development`.
 - `TESLACAM_ROOT`: In-container path to the TeslaCam footage root. Defaults to `/data/TeslaCam`.
+- `THUMBNAILS_ROOT`: In-container path to generated thumbnails. Defaults to `/data/Thumbnails`.
+- `PREVIEWS_ROOT`: In-container path to generated previews. Defaults to `/data/Previews`.
+- `MAX_THUMBNAIL_FOLDER_SIZE_GB`: Fallback limit for the thumbnails folder. Defaults to `20`.
+- `MAX_PREVIEWS_FOLDER_SIZE_GB`: Fallback limit for the previews folder. Defaults to `100`.
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
 
 `/data/Thumbnails` and `/data/Previews` are also mounted for generated image thumbnails and prerendered full-camera previews.
+
+## Configuration
+
+The app now follows the same basic pattern used in 3dfabs: a checked-in example YAML under `config/`, plus an optional ignored local override file, loaded into a typed settings object at startup and then copied into Flask config.
+
+Tracked defaults live in `config/general/config.example.yaml`:
+
+```yaml
+app_env: development
+storage:
+	max_thumbnail_folder_size_gb: 20
+	max_previews_folder_size_gb: 100
+```
+
+For local or test-specific overrides, create `config/general/config.yaml`. It is ignored by git and layered on top of the example config at runtime.
+
+The current config surface includes:
+
+- maximum thumbnail folder size in GB
+- maximum previews folder size in GB
+
+Path settings stay in environment variables and Compose mounts rather than the YAML config.
+
+If a YAML key is omitted, the matching environment variable is used as a fallback.
 
 ## TeslaCam Assumptions
 
