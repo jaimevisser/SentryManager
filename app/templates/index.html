@@ -1,6 +1,12 @@
 {% extends "base.html" %}
+{% set page_shell_class = "index-shell" %}
 
 {% block content %}
+    <div class="index-eye-bg" aria-hidden="true">
+        <div class="index-eye-asset">
+            <img src="{{ url_for('static', filename='images/orange-status-light.svg') }}" alt="">
+        </div>
+    </div>
     {% if day_groups %}
         <div class="day-section-list">
             {% for day_group in day_groups %}

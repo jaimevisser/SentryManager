@@ -1,6 +1,6 @@
 :root {
-    --bg: #06111a;
-    --bg-soft: #0d1c29;
+    --bg: #1d1d1d;
+    --bg-soft: #1d1d1d;
     --surface: rgba(12, 27, 40, 0.9);
     --surface-strong: rgba(17, 34, 49, 0.98);
     --border: rgba(210, 230, 245, 0.12);
@@ -25,10 +25,7 @@ body {
     min-height: 100vh;
     font-family: "Space Grotesk", "Helvetica Neue", sans-serif;
     color: var(--text);
-    background:
-        radial-gradient(circle at top left, rgba(116, 208, 255, 0.16), transparent 28%),
-        radial-gradient(circle at top right, rgba(255, 138, 61, 0.22), transparent 22%),
-        linear-gradient(180deg, #08141e 0%, #06111a 100%);
+    background: #1d1d1d;
 }
 
 a {
@@ -39,10 +36,7 @@ a {
     position: fixed;
     inset: 0;
     pointer-events: none;
-    background:
-        radial-gradient(circle at 18% 12%, rgba(116, 208, 255, 0.12), transparent 24%),
-        radial-gradient(circle at 82% 8%, rgba(255, 138, 61, 0.16), transparent 20%);
-    filter: blur(28px);
+    display: none;
 }
 
 .site-header {
@@ -76,9 +70,77 @@ a {
     box-shadow: 0 0 0 6px rgba(255, 138, 61, 0.08);
 }
 
+.page-shell.index-shell {
+    position: relative;
+    isolation: isolate;
+    --index-eye-size: min(28vw, 26rem);
+    --index-eye-line-width: calc(var(--index-eye-size) * 0.025);
+}
+
+.page-shell.index-shell .index-eye-bg {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 33.333vw;
+    min-width: 18rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.page-shell.index-shell .index-eye-asset {
+    position: relative;
+    width: var(--index-eye-size);
+    flex: 0 0 auto;
+}
+
+.page-shell.index-shell .index-eye-asset::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -100vh;
+    bottom: -100vh;
+    width: var(--index-eye-line-width);
+    background: #000000;
+    transform: translateX(-50%);
+    z-index: 0;
+}
+
+.page-shell.index-shell .index-eye-bg img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.page-shell.index-shell > :not(.index-eye-bg) {
+    position: relative;
+    z-index: 1;
+}
+
 .header-copy {
     color: var(--muted);
     font-size: 0.95rem;
+}
+
+@media (max-width: 720px) {
+    .page-shell.index-shell {
+        --index-eye-size: min(46vw, 18rem);
+    }
+
+    .page-shell.index-shell .index-eye-bg {
+        width: 52vw;
+        min-width: 0;
+    }
+
+    .site-header {
+        padding: 1rem 1.25rem;
+    }
 }
 
 .page-shell {
