@@ -487,6 +487,13 @@ dt {
     grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
 }
 
+.player-view-frame[data-active-view="full_left"],
+.player-view-frame[data-active-view="full_right"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+}
+
 .player-secondary-grid {
     display: flex;
     justify-content: center;
@@ -496,6 +503,12 @@ dt {
 
 .player-secondary-grid[hidden] {
     display: none !important;
+}
+
+.player-view-frame[data-active-view="full_left"] .player-secondary-grid,
+.player-view-frame[data-active-view="full_right"] .player-secondary-grid {
+    width: 100%;
+    height: 100%;
 }
 
 .player-video-shell {
@@ -514,6 +527,17 @@ dt {
     width: auto;
     height: 100%;
     aspect-ratio: 16 / 9;
+}
+
+.player-view-frame[data-active-view="full_left"] .player-video-shell-secondary,
+.player-view-frame[data-active-view="full_right"] .player-video-shell-secondary {
+    flex: 1 1 auto;
+    width: 100%;
+    aspect-ratio: auto;
+}
+
+.player-video-shell[hidden] {
+    display: none !important;
 }
 
 .event-player-video {

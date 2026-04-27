@@ -49,6 +49,18 @@ function initEventPlayer() {
                 right: "right_pillar",
             },
         },
+        full_left: {
+            master: "left_repeater",
+            secondarySlots: {
+                right: "left_pillar",
+            },
+        },
+        full_right: {
+            master: "right_pillar",
+            secondarySlots: {
+                right: "right_repeater",
+            },
+        },
     };
 
     function getCompositeView(viewKey) {
@@ -356,15 +368,26 @@ function initEventPlayer() {
                 continue;
             }
 
+            const secondaryShell = secondaryPlayer.parentElement;
             const cameraKey = compositeView.secondarySlots[slotKey];
             if (!cameraKey) {
                 secondaryPlayer.pause();
+                if (secondaryShell) {
+                    secondaryShell.hidden = true;
+                }
                 continue;
+            }
+
+            if (secondaryShell) {
+                secondaryShell.hidden = false;
             }
 
             const targetClip = findClipBySegmentKey(cameraKey, masterClip.segmentKey, activeIndex);
             if (!targetClip) {
                 secondaryPlayer.pause();
+                if (secondaryShell) {
+                    secondaryShell.hidden = true;
+                }
                 continue;
             }
 
@@ -419,6 +442,9 @@ function initEventPlayer() {
             }
 
             secondaryPlayer.pause();
+            if (secondaryPlayer.parentElement) {
+                secondaryPlayer.parentElement.hidden = false;
+            }
             delete secondaryPlayer.dataset.pendingTime;
             delete secondaryPlayer.dataset.shouldPlay;
             if (!resetSource) {

@@ -332,6 +332,10 @@ def build_view_selector(camera_playlists: dict[str, list[EventClip]]) -> list[di
         selector.append({"key": "full_rear", "label": "Full rear"})
     if {"front", "left_pillar", "right_pillar"}.issubset(camera_playlists):
         selector.append({"key": "full_front", "label": "Full front"})
+    if {"left_repeater", "left_pillar"}.issubset(camera_playlists):
+        selector.append({"key": "full_left", "label": "Full left"})
+    if {"right_pillar", "right_repeater"}.issubset(camera_playlists):
+        selector.append({"key": "full_right", "label": "Full right"})
     return selector
 
 
