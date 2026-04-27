@@ -20,12 +20,16 @@ function initEventPlayer() {
     const allPlaylists = playlistConfig?.playlists;
     const defaultViewKey = playlistConfig?.defaultViewKey;
     const rawEventMarkerTime = playlistConfig?.eventMarkerTime;
+    const rawInitialStartTime = playlistConfig?.initialStartTime;
     const eventFlags = playlistConfig?.eventFlags;
     const eventHasAutopilotActivity = Boolean(eventFlags?.hasAutopilotActivity);
     const eventHasSteeringAngleData = Boolean(eventFlags?.hasSteeringAngleData);
     const eventMarkerTime = typeof rawEventMarkerTime === "number" && Number.isFinite(rawEventMarkerTime)
         ? rawEventMarkerTime
         : null;
+    const initialStartTime = typeof rawInitialStartTime === "number" && Number.isFinite(rawInitialStartTime)
+        ? Math.max(0, rawInitialStartTime)
+        : 0;
     if (!allPlaylists || typeof allPlaylists !== "object" || !defaultViewKey) {
         return;
     }
@@ -92,6 +96,7 @@ function initEventPlayer() {
     let isScrubbing = false;
     let activeLoadToken = 0;
     let lastPointerCommitAt = 0;
+    let initialSeekApplied = false;
 
     const durationCache = new Map();
     const telemetryCache = new Map();
@@ -299,17 +304,17 @@ function initEventPlayer() {
         return { index: 0, offset: 0 };
     }
 
-    function seekToEventTime(eventTime) {
+    function seekToEventTime(eventTime, options = {}) {
         const totalDuration = getTotalDuration();
         if (totalDuration <= 0) {
             return;
         }
 
+        const { autoplay = !player.paused } = options;
         const clampedTime = Math.min(Math.max(eventTime, 0), totalDuration);
         const target = findClipForEventTime(clampedTime);
-        const wantsPlayback = !player.paused;
         pendingEventTime = clampedTime;
-        loadClip(target.index, { autoplay: false, targetTime: target.offset, secondaryShouldPlay: wantsPlayback });
+        loadClip(target.index, { autoplay, targetTime: target.offset, secondaryShouldPlay: autoplay });
     }
 
     function findClipBySegmentKey(cameraKey, segmentKey, fallbackIndex) {
@@ -735,7 +740,7 @@ function initEventPlayer() {
             if (wantsPlayback) {
                 shouldResumeAfterSeek = true;
             }
-            seekToEventTime(currentEventTime);
+            seekToEventTime(currentEventTime, { autoplay: wantsPlayback });
         });
     }
 
@@ -752,6 +757,11 @@ function initEventPlayer() {
     populatePlaylistDurations(playlist).then(() => {
         playlistReady = true;
         preloadTelemetryForPlaylist(playlist);
+        if (!initialSeekApplied) {
+            initialSeekApplied = true;
+            seekToEventTime(initialStartTime, { autoplay: true });
+            return;
+        }
         syncTimelineUI();
     });
 

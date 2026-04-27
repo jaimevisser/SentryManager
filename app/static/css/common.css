@@ -449,29 +449,49 @@ dt {
     width: 100%;
 }
 
+.player-stage-surface {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    overflow: hidden;
+}
+
 .player-view-frame {
     display: grid;
+    grid-template-rows: minmax(0, 1fr);
     gap: 0.9rem;
     width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0.9rem 0.9rem 0;
 }
 
 .player-video-shell-main,
 .player-secondary-grid {
     width: 100%;
+    min-height: 0;
 }
 
 .player-view-frame[data-active-view="full_rear"] .player-video-shell-main,
 .player-view-frame[data-active-view="full_rear"] .player-secondary-grid,
 .player-view-frame[data-active-view="full_front"] .player-video-shell-main,
 .player-view-frame[data-active-view="full_front"] .player-secondary-grid {
-    width: calc((100% - 1.6rem) / 1.5);
-    margin: 0 auto;
+    width: 100%;
+    margin: 0;
+}
+
+.player-view-frame[data-active-view="full_rear"],
+.player-view-frame[data-active-view="full_front"] {
+    grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
 }
 
 .player-secondary-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.9rem;
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    gap: 0;
 }
 
 .player-secondary-grid[hidden] {
@@ -481,17 +501,31 @@ dt {
 .player-video-shell {
     overflow: hidden;
     width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+}
+
+.player-video-shell-secondary {
+    flex: 0 0 auto;
+    width: auto;
+    height: 100%;
+    aspect-ratio: 16 / 9;
 }
 
 .event-player-video {
     width: 100%;
+    height: 100%;
     display: block;
-    aspect-ratio: 16 / 9;
-    background: #02070b;
+    object-fit: contain;
+    background: #000;
 }
 
 .event-player-video-secondary {
-    object-fit: cover;
+    object-fit: contain;
 }
 
 .player-controls {
@@ -504,10 +538,10 @@ dt {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 3rem;
-    padding: 0.7rem 1rem;
-    border: 1px solid rgba(116, 208, 255, 0.12);
-    background: rgba(116, 208, 255, 0.06);
+    min-height: 3.35rem;
+    padding: 0.7rem 1rem 0.8rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(6, 17, 26, 0.88) 100%);
 }
 
 .player-status-item {

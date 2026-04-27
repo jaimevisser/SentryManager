@@ -31,6 +31,15 @@ CAMERA_LABELS = {
     "unknown": "Unknown",
 }
 
+SENTRY_EVENT_CAMERA_MAP = {
+    "0": "front",
+    "3": "left_repeater",
+    "4": "right_repeater",
+    "5": "left_pillar",
+    "6": "right_pillar",
+    "7": "back",
+}
+
 
 @dataclass
 class EventSummary:
@@ -123,8 +132,9 @@ def create_app() -> Flask:
         if not camera_playlists:
             abort(404)
 
-        default_view_key = "front" if "front" in camera_playlists else next(iter(camera_playlists))
+        default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
         event_processing_state = load_event_processing_state(event_dir)
+        initial_start_time = get_initial_player_start_time(event_summary)
         return render_template(
             "event_player.html",
             event=event_summary,
@@ -146,6 +156,7 @@ def create_app() -> Flask:
             event_has_autopilot_activity=event_processing_state.get("hasAutopilotActivity", False),
             event_has_steering_angle_data=event_processing_state.get("hasSteeringAngleData", False),
             event_marker_time=event_summary.trigger_offset_seconds,
+            initial_start_time=initial_start_time,
             page_title=f"{event_summary.day_label} Player | SentryManager",
             page_description=f"Review TeslaCam clips for {event_summary.name}.",
             page_shell_class="page-shell-full",
@@ -324,7 +335,22 @@ def build_view_selector(camera_playlists: dict[str, list[EventClip]]) -> list[di
     return selector
 
 
-def load_event_location_label(event_dir: Path) -> str | None:
+def get_default_player_view_key(
+    event: EventSummary,
+    event_dir: Path,
+    camera_playlists: dict[str, list[EventClip]],
+) -> str:
+    if event.category == "SentryClips":
+        trigger_camera_key = load_event_trigger_camera_key(event_dir)
+        if trigger_camera_key in camera_playlists:
+            return trigger_camera_key
+
+    if "front" in camera_playlists:
+        return "front"
+    return next(iter(camera_playlists))
+
+
+def load_event_json_payload(event_dir: Path) -> dict[str, object] | None:
     event_file = event_dir / "event.json"
     if not event_file.is_file():
         return None
@@ -335,6 +361,14 @@ def load_event_location_label(event_dir: Path) -> str | None:
         return None
 
     if not isinstance(payload, dict):
+        return None
+
+    return payload
+
+
+def load_event_location_label(event_dir: Path) -> str | None:
+    payload = load_event_json_payload(event_dir)
+    if payload is None:
         return None
 
     street = payload.get("street")
@@ -349,16 +383,8 @@ def load_event_trigger_offset_seconds(event_dir: Path, first_segment_timestamp: 
     if first_segment_timestamp is None:
         return None
 
-    event_file = event_dir / "event.json"
-    if not event_file.is_file():
-        return None
-
-    try:
-        payload = json.loads(event_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-    if not isinstance(payload, dict):
+    payload = load_event_json_payload(event_dir)
+    if payload is None:
         return None
 
     raw_timestamp = payload.get("timestamp")
@@ -371,6 +397,18 @@ def load_event_trigger_offset_seconds(event_dir: Path, first_segment_timestamp: 
         return None
 
     return max(0.0, (trigger_timestamp - first_segment_timestamp).total_seconds())
+
+
+def load_event_trigger_camera_key(event_dir: Path) -> str | None:
+    payload = load_event_json_payload(event_dir)
+    if payload is None:
+        return None
+
+    raw_camera = payload.get("camera")
+    if raw_camera is None:
+        return None
+
+    return SENTRY_EVENT_CAMERA_MAP.get(str(raw_camera).strip())
 
 
 def load_event_processing_state(event_dir: Path) -> dict[str, object]:
@@ -387,6 +425,12 @@ def load_event_processing_state(event_dir: Path) -> dict[str, object]:
         return {}
 
     return payload
+
+
+def get_initial_player_start_time(event: EventSummary) -> float:
+    if event.category == "SentryClips" and event.trigger_offset_seconds is not None:
+        return max(0.0, event.trigger_offset_seconds - 60.0)
+    return 0.0
 
 
 def _is_within_root(path: Path, root: Path) -> bool:
