@@ -20,6 +20,9 @@ function initEventPlayer() {
     const allPlaylists = playlistConfig?.playlists;
     const defaultViewKey = playlistConfig?.defaultViewKey;
     const rawEventMarkerTime = playlistConfig?.eventMarkerTime;
+    const eventFlags = playlistConfig?.eventFlags;
+    const eventHasAutopilotActivity = Boolean(eventFlags?.hasAutopilotActivity);
+    const eventHasSteeringAngleData = Boolean(eventFlags?.hasSteeringAngleData);
     const eventMarkerTime = typeof rawEventMarkerTime === "number" && Number.isFinite(rawEventMarkerTime)
         ? rawEventMarkerTime
         : null;
@@ -61,6 +64,10 @@ function initEventPlayer() {
 
     const currentTimeNode = document.querySelector("[data-player-current-time]");
     const totalTimeNode = document.querySelector("[data-player-total-time]");
+    const speedNode = document.querySelector("[data-player-speed]");
+    const blinkerLeftNode = document.querySelector("[data-player-blinker-left]");
+    const autopilotNode = document.querySelector("[data-player-autopilot]");
+    const blinkerRightNode = document.querySelector("[data-player-blinker-right]");
     const scrubber = document.querySelector("[data-player-scrub]");
     const eventMarker = document.querySelector("[data-player-event-marker]");
     const toggleButton = document.querySelector("[data-player-toggle]");
@@ -87,6 +94,7 @@ function initEventPlayer() {
     let lastPointerCommitAt = 0;
 
     const durationCache = new Map();
+    const telemetryCache = new Map();
 
     for (const preloadPlayer of Object.values(preloadPlayers)) {
         preloadPlayer.preload = "auto";
@@ -115,6 +123,121 @@ function initEventPlayer() {
 
     function getTotalDuration() {
         return playlist.reduce((sum, clip) => sum + (clip.duration || 0), 0);
+    }
+
+    function formatSpeedText(speedKph) {
+        if (speedKph === null) {
+            return "";
+        }
+        const roundedSpeed = Math.round(speedKph);
+        return `<span class="player-status-value-number">${roundedSpeed}</span><span class="player-status-value-unit">km/h</span>`;
+    }
+
+    function findTelemetrySampleIndex(timeMs, telemetry) {
+        const times = telemetry?.timeMs;
+        if (!times || times.length === 0) {
+            return -1;
+        }
+
+        let low = 0;
+        let high = times.length - 1;
+        while (low <= high) {
+            const middle = Math.floor((low + high) / 2);
+            const candidate = times[middle];
+            if (candidate <= timeMs) {
+                low = middle + 1;
+                continue;
+            }
+            high = middle - 1;
+        }
+
+        if (high >= 0) {
+            return high;
+        }
+        return 0;
+    }
+
+    function getSpeedKphAtEventTime(eventTime) {
+        const sample = getTelemetrySampleAtEventTime(eventTime);
+        if (!sample || (sample.presenceBits & SPEED_PRESENT_MASK) === 0) {
+            return null;
+        }
+
+        return sample.speedCmps * 0.036;
+    }
+
+    function getTelemetrySampleAtEventTime(eventTime) {
+        const target = pendingEventTime !== null ? findClipForEventTime(eventTime) : { index: activeIndex, offset: player.currentTime };
+        const clip = playlist[target.index];
+        const telemetry = clip?.telemetry;
+        if (!clip || !telemetry || telemetry.sampleCount === 0) {
+            return null;
+        }
+
+        const sampleIndex = findTelemetrySampleIndex(Math.max(0, target.offset) * 1000, telemetry);
+        if (sampleIndex < 0) {
+            return null;
+        }
+
+        return {
+            presenceBits: telemetry.presenceBits[sampleIndex],
+            autopilotState: telemetry.autopilotState[sampleIndex],
+            speedCmps: telemetry.speedCmps[sampleIndex],
+            steeringTenthsDeg: telemetry.steeringTenthsDeg[sampleIndex],
+            flags: telemetry.flags[sampleIndex],
+        };
+    }
+
+    function syncAutopilotUI(eventTime) {
+        if (!autopilotNode) {
+            return;
+        }
+
+        if (!eventHasAutopilotActivity && !eventHasSteeringAngleData) {
+            autopilotNode.hidden = true;
+            autopilotNode.style.transform = "rotate(0deg)";
+            return;
+        }
+
+        const sample = getTelemetrySampleAtEventTime(eventTime);
+        if (!sample) {
+            autopilotNode.hidden = true;
+            autopilotNode.style.transform = "rotate(0deg)";
+            return;
+        }
+
+        const isActive = Boolean(sample && (sample.presenceBits & AUTOPILOT_PRESENT_MASK) && sample.autopilotState !== AUTOPILOT_NONE_STATE);
+        const steeringAngleDeg = (sample.presenceBits & STEERING_ANGLE_PRESENT_MASK)
+            ? sample.steeringTenthsDeg / 10
+            : 0;
+        autopilotNode.hidden = false;
+        autopilotNode.src = isActive ? autopilotNode.dataset.activeSrc : autopilotNode.dataset.inactiveSrc;
+        autopilotNode.style.transform = `rotate(${steeringAngleDeg}deg)`;
+    }
+
+    function syncBlinkerUI(eventTime) {
+        const sample = getTelemetrySampleAtEventTime(eventTime);
+        const leftOn = Boolean(sample && (sample.presenceBits & BLINKER_LEFT_PRESENT_MASK) && (sample.flags & BLINKER_LEFT_FLAG_MASK));
+        const rightOn = Boolean(sample && (sample.presenceBits & BLINKER_RIGHT_PRESENT_MASK) && (sample.flags & BLINKER_RIGHT_FLAG_MASK));
+
+        if (blinkerLeftNode) {
+            blinkerLeftNode.hidden = !leftOn;
+        }
+        if (blinkerRightNode) {
+            blinkerRightNode.hidden = !rightOn;
+        }
+    }
+
+    function syncSpeedUI(eventTime) {
+        if (!speedNode) {
+            return;
+        }
+        const speedKph = getSpeedKphAtEventTime(eventTime);
+        if (speedKph === null) {
+            speedNode.textContent = "";
+            return;
+        }
+        speedNode.innerHTML = formatSpeedText(speedKph);
     }
 
     function syncTimelineUI() {
@@ -159,6 +282,9 @@ function initEventPlayer() {
             button.classList.toggle("is-active", isActive);
             button.setAttribute("aria-pressed", isActive ? "true" : "false");
         }
+        syncBlinkerUI(eventTime);
+        syncAutopilotUI(eventTime);
+        syncSpeedUI(eventTime);
     }
 
     function findClipForEventTime(eventTime) {
@@ -411,6 +537,9 @@ function initEventPlayer() {
             return;
         }
 
+        ensureTelemetryLoaded(clip).then(() => {
+            syncTimelineUI();
+        });
         loadViewAtIndex(index, targetTime, secondaryShouldPlay);
     }
 
@@ -528,6 +657,56 @@ function initEventPlayer() {
         });
     }
 
+    function preloadTelemetryForPlaylist(playlistToPopulate) {
+        playlistToPopulate.forEach((clip) => {
+            ensureTelemetryLoaded(clip).then(() => {
+                if (playlistToPopulate === playlist) {
+                    syncTimelineUI();
+                }
+            });
+        });
+    }
+
+    function ensureTelemetryLoaded(clip) {
+        if (!clip?.telemetryUrl) {
+            return Promise.resolve(null);
+        }
+        if (clip.telemetryLoaded) {
+            return Promise.resolve(clip.telemetry);
+        }
+        if (clip.telemetryPromise) {
+            return clip.telemetryPromise;
+        }
+
+        const cachedPromise = telemetryCache.get(clip.telemetryUrl);
+        if (cachedPromise) {
+            clip.telemetryPromise = cachedPromise.then((telemetry) => {
+                clip.telemetry = telemetry;
+                clip.telemetryLoaded = true;
+                return telemetry;
+            });
+            return clip.telemetryPromise;
+        }
+
+        const telemetryPromise = fetch(clip.telemetryUrl)
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`Failed to load telemetry: ${response.status}`);
+                }
+                return response.arrayBuffer();
+            })
+            .then(decodeTelemetryBuffer)
+            .catch(() => null);
+
+        telemetryCache.set(clip.telemetryUrl, telemetryPromise);
+        clip.telemetryPromise = telemetryPromise.then((telemetry) => {
+            clip.telemetry = telemetry;
+            clip.telemetryLoaded = true;
+            return telemetry;
+        });
+        return clip.telemetryPromise;
+    }
+
     function switchView(nextViewKey) {
         const nextCameraKey = getMasterCameraKey(nextViewKey);
         if (!allPlaylists[nextCameraKey] || nextViewKey === activeViewKey) {
@@ -551,6 +730,7 @@ function initEventPlayer() {
 
         populatePlaylistDurations(playlist).then(() => {
             playlistReady = true;
+            preloadTelemetryForPlaylist(playlist);
             pendingEventTime = currentEventTime;
             if (wantsPlayback) {
                 shouldResumeAfterSeek = true;
@@ -571,10 +751,74 @@ function initEventPlayer() {
 
     populatePlaylistDurations(playlist).then(() => {
         playlistReady = true;
+        preloadTelemetryForPlaylist(playlist);
         syncTimelineUI();
     });
 
     syncTimelineUI();
+}
+
+const TELEMETRY_MAGIC = "SEI1";
+const TELEMETRY_FORMAT_VERSION = 1;
+const TELEMETRY_HEADER_STRUCT_SIZE = 20;
+const SPEED_PRESENT_MASK = 1 << 3;
+const STEERING_ANGLE_PRESENT_MASK = 1 << 5;
+const BLINKER_LEFT_PRESENT_MASK = 1 << 6;
+const BLINKER_RIGHT_PRESENT_MASK = 1 << 7;
+const AUTOPILOT_PRESENT_MASK = 1 << 9;
+const AUTOPILOT_NONE_STATE = 0;
+const BLINKER_LEFT_FLAG_MASK = 0x01;
+const BLINKER_RIGHT_FLAG_MASK = 0x02;
+const TELEMETRY_COLUMNS = [
+    { key: "timeMs", ctor: Uint32Array },
+    { key: "presenceBits", ctor: Uint16Array },
+    { key: "messageVersion", ctor: Uint16Array },
+    { key: "frameSeqNo", ctor: BigUint64Array },
+    { key: "gearState", ctor: Uint8Array },
+    { key: "autopilotState", ctor: Uint8Array },
+    { key: "flags", ctor: Uint8Array },
+    { key: "speedCmps", ctor: Uint16Array },
+    { key: "acceleratorCenti", ctor: Uint16Array },
+    { key: "steeringTenthsDeg", ctor: Int16Array },
+    { key: "headingCdeg", ctor: Uint16Array },
+    { key: "latitudeE7", ctor: Int32Array },
+    { key: "longitudeE7", ctor: Int32Array },
+    { key: "accelXMmps2", ctor: Int16Array },
+    { key: "accelYMmps2", ctor: Int16Array },
+    { key: "accelZMmps2", ctor: Int16Array },
+];
+
+function decodeTelemetryBuffer(arrayBuffer) {
+    const view = new DataView(arrayBuffer);
+    const magic = String.fromCharCode(
+        view.getUint8(0),
+        view.getUint8(1),
+        view.getUint8(2),
+        view.getUint8(3)
+    );
+    const formatVersion = view.getUint16(4, true);
+    const headerSize = view.getUint16(6, true);
+    const sampleCount = view.getUint32(8, true);
+
+    if (magic !== TELEMETRY_MAGIC || formatVersion !== TELEMETRY_FORMAT_VERSION) {
+        throw new Error("Unsupported telemetry sidecar format");
+    }
+
+    const telemetry = { sampleCount };
+    for (let index = 0; index < TELEMETRY_COLUMNS.length; index += 1) {
+        const { key, ctor } = TELEMETRY_COLUMNS[index];
+        const offset = view.getUint32(TELEMETRY_HEADER_STRUCT_SIZE + (index * 4), true);
+        if (sampleCount === 0 || offset === 0) {
+            telemetry[key] = new ctor(0);
+            continue;
+        }
+        if (offset < headerSize || offset >= arrayBuffer.byteLength) {
+            throw new Error(`Invalid telemetry offset for ${key}`);
+        }
+        telemetry[key] = new ctor(arrayBuffer, offset, sampleCount);
+    }
+
+    return telemetry;
 }
 
 async function populateClipDurations(playlist, player, durationCache, onDurationUpdate) {

@@ -12,7 +12,7 @@ The project is designed around a Python backend that serves Jinja-rendered HTML 
 - Scrub through synchronized multi-angle footage in the browser.
 - Mark ranges on the master event timeline and choose which camera view or layout should appear for each range.
 - Export the final cut from the original footage, not from browser playback proxies.
-- Run cleanly inside a Docker-based stack with a read-only TeslaCam volume mounted into the container.
+- Run cleanly inside a Docker-based stack with a mounted TeslaCam volume available to the container.
 
 ## Current Scope
 
@@ -80,7 +80,8 @@ The intended workflow is:
 ├── docker-compose.yml
 ├── docs/
 │   ├── brief.md
-│   └── data.md
+│   ├── data.md
+│   └── sei-metadata.md
 └── requirements.txt
 ```
 
@@ -91,6 +92,8 @@ The Compose file mounts these host folders into the container:
 - `./config` to `/app/config`
 - `./data/TeslaCam` to `/data/TeslaCam`
 - `./data/Previews` to `/data/Previews`
+
+`/data/TeslaCam` must be writable by the container so the app can store segment-level `-telemetry.sei.bin` files plus a `sentrymanager.json` processing marker inside event folders.
 
 ### Start the app
 

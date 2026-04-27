@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, abort, render_template, send_file, url_for
 
 from .config import apply_settings
+from .sei import ensure_sei_sidecars, get_event_processing_marker_path, get_segment_sei_sidecar_path
 
 
 CAMERA_ORDER = (
@@ -88,6 +89,23 @@ def create_app() -> Flask:
             abort(404)
         return send_file(clip_file, conditional=True)
 
+    @app.route("/event-telemetry/<path:event_path>/<segment_key>")
+    def event_telemetry(event_path: str, segment_key: str):
+        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
+        event_dir = (footage_root / event_path).resolve()
+        if not event_dir.is_dir():
+            abort(404)
+        if not _is_within_root(event_dir, footage_root):
+            abort(404)
+
+        sidecar_file = get_segment_sei_sidecar_path(event_dir, segment_key)
+        if not sidecar_file.is_file():
+            abort(404)
+        if not _is_within_root(sidecar_file, footage_root):
+            abort(404)
+
+        return send_file(sidecar_file, mimetype="application/octet-stream", conditional=True)
+
     @app.route("/events/<path:event_path>")
     def event_player(event_path: str):
         footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
@@ -106,6 +124,7 @@ def create_app() -> Flask:
             abort(404)
 
         default_view_key = "front" if "front" in camera_playlists else next(iter(camera_playlists))
+        event_processing_state = load_event_processing_state(event_dir)
         return render_template(
             "event_player.html",
             event=event_summary,
@@ -118,11 +137,14 @@ def create_app() -> Flask:
                         "segmentLabel": clip.segment_label,
                         "fileName": clip.file_name,
                         "url": url_for("event_clip", clip_path=clip.file_path),
+                        "telemetryUrl": url_for("event_telemetry", event_path=event_summary.path, segment_key=clip.segment_key),
                     }
                     for clip in clips
                 ]
                 for camera_key, clips in camera_playlists.items()
             },
+            event_has_autopilot_activity=event_processing_state.get("hasAutopilotActivity", False),
+            event_has_steering_angle_data=event_processing_state.get("hasSteeringAngleData", False),
             event_marker_time=event_summary.trigger_offset_seconds,
             page_title=f"{event_summary.day_label} Player | SentryManager",
             page_description=f"Review TeslaCam clips for {event_summary.name}.",
@@ -190,6 +212,8 @@ def summarize_event_dir(event_dir: Path, footage_root: Path) -> EventSummary | N
     clip_files = sorted(event_dir.glob("*.mp4"))
     if not clip_files:
         return None
+
+    ensure_sei_sidecars(clip_files)
 
     cameras = sorted({infer_camera_name(path.name) for path in clip_files}, key=camera_sort_key)
     segment_timestamps = [
@@ -347,6 +371,22 @@ def load_event_trigger_offset_seconds(event_dir: Path, first_segment_timestamp: 
         return None
 
     return max(0.0, (trigger_timestamp - first_segment_timestamp).total_seconds())
+
+
+def load_event_processing_state(event_dir: Path) -> dict[str, object]:
+    marker_file = get_event_processing_marker_path(event_dir)
+    if not marker_file.is_file():
+        return {}
+
+    try:
+        payload = json.loads(marker_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    return payload
 
 
 def _is_within_root(path: Path, root: Path) -> bool:

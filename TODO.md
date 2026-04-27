@@ -20,6 +20,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 
 - [ ] Implement TeslaCam directory scanning for `SavedClips`, `SentryClips`, and compatible folder layouts.
 - [ ] Extract clip metadata with `ffprobe`.
+- [x] Document upstream Tesla SEI metadata support and field inventory for compatible clips.
+- [x] Auto-extract `.sei.bin` sidecars for discovered clips in a frontend-ready binary format.
 - [ ] Normalize source clips into event records and angle-specific clip sequences.
 - [ ] Persist the normalized event and clip metadata in a local data store.
 
@@ -37,6 +39,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Add a basic event player page linked from the event browser, with sequential event playback and switchable camera views.
 - [x] Add a review page with synchronized angle playback.
 - [x] Implement scrub, jump, and clip-boundary handling on the master event timeline.
+- [x] Load telemetry sidecars in the player and show current speed plus blinker indicators in a status bar.
+- [x] Add a steering-wheel autopilot indicator with white/blue active states backed by `sentrymanager.json` event metadata.
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
 
 ## Phase 5: Editing Model

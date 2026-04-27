@@ -11,6 +11,6 @@ services:
       - "8765:8080"
     volumes:
       - ./config:/app/config:ro
-      - ${TESLACAM_PATH:-./data/TeslaCam}:/data/TeslaCam:ro
+      - ${TESLACAM_PATH:-./data/TeslaCam}:/data/TeslaCam
       - ./data/Previews:/data/Previews
     restart: unless-stopped
