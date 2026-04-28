@@ -39,6 +39,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Add an event player linked from the browser, with sequential clip playback and switchable camera views.
 - [x] Add synchronized multi-angle composite playback for front, rear, and side layouts when source clips exist.
 - [x] Implement scrub, jump, and clip-boundary handling on the master event timeline.
+- [x] Add long-press multi-select on event thumbnails with a header delete action.
+- [x] Add a header delete action to the event player with confirmation and index redirect.
 - [x] Load telemetry sidecars in the player and show current speed plus blinker indicators in a status bar.
 - [x] Collapse the player telemetry bar on segments without telemetry so the video surface uses the freed space.
 - [x] Add a steering-wheel autopilot indicator with white/blue active states backed by `sentrymanager.json` event metadata.

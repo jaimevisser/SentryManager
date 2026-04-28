@@ -16,8 +16,10 @@
                     </div>
                     <div class="photo-grid">
                         {% for event in day_group.events %}
-                            <article class="photo-card{% if loop.first and day_group.event_count > 1 %} photo-card-featured{% endif %}">
-                                <a class="photo-link" href="{{ url_for('event_player', event_path=event.path) }}">
+                            <article class="photo-card{% if loop.first and day_group.event_count > 1 %} photo-card-featured{% endif %}"
+                                     data-index-card
+                                     data-event-path="{{ event.path }}">
+                                <a class="photo-link" data-photo-link href="{{ url_for('event_player', event_path=event.path) }}">
                                     <div class="photo-frame">
                                         {% if event.thumbnail_path %}
                                             <img src="{{ url_for('event_thumbnail', event_path=event.thumbnail_path) }}"
@@ -26,6 +28,11 @@
                                         {% else %}
                                             <div class="photo-fallback">No thumbnail</div>
                                         {% endif %}
+                                        <div class="photo-selection-mark" aria-hidden="true">
+                                            <img class="photo-selection-icon"
+                                                 src="{{ url_for('static', filename='mdi/check-circle-outline-orange.svg') }}"
+                                                 alt="">
+                                        </div>
                                         <div class="photo-overlay">
                                             <div class="photo-topline">
                                                 <span class="photo-chip">{{ event.category_label }}</span>

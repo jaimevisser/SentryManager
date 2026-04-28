@@ -10,13 +10,39 @@
         <link rel="stylesheet" href="{{ url_for('static', filename='css/common.css') }}">
         {% block extra_head %}{% endblock %}
     </head>
-    <body>
+    <body{% if page_shell_class %} class="{{ page_shell_class }}"{% endif %}>
         <div class="page-glow" aria-hidden="true"></div>
         <header class="site-header">
             <a class="brand" href="/">
                 <span class="brand-wordmark">SentryManager</span>
             </a>
-            {% if page_shell_class != "index-shell" %}
+            {% if page_shell_class == "index-shell" %}
+                <button class="header-selection-action"
+                        type="button"
+                        data-index-delete-button
+                        data-delete-url="{{ url_for('delete_events') }}"
+                        aria-label="Delete selected clips"
+                        hidden>
+                    <img class="header-selection-action-icon"
+                         src="{{ url_for('static', filename='mdi/trash-can-outline-orange.svg') }}"
+                         alt="">
+                </button>
+            {% elif page_delete_event_path %}
+                <button class="header-selection-action header-selection-action-viewer"
+                        type="button"
+                        data-viewer-delete-button
+                        data-delete-url="{{ url_for('delete_events') }}"
+                        data-event-path="{{ page_delete_event_path }}"
+                        data-delete-redirect-url="{{ page_delete_redirect_url or url_for('index') }}"
+                        aria-label="Delete this clip">
+                    <img class="header-selection-action-icon"
+                         src="{{ url_for('static', filename='mdi/trash-can-outline-orange.svg') }}"
+                         alt="">
+                </button>
+                <div class="header-eye-collapsed" aria-hidden="true">
+                    <img class="header-eye-mark" src="{{ url_for('static', filename='images/sentry-eye-background.svg') }}" alt="">
+                </div>
+            {% elif page_shell_class != "index-shell" %}
                 <div class="header-eye-collapsed" aria-hidden="true">
                     <img class="header-eye-mark" src="{{ url_for('static', filename='images/sentry-eye-background.svg') }}" alt="">
                 </div>
@@ -25,6 +51,35 @@
         <main class="page-shell{% if page_shell_class %} {{ page_shell_class }}{% endif %}">
             {% block content %}{% endblock %}
         </main>
+        {% if page_shell_class == "index-shell" or page_delete_event_path %}
+            <dialog class="selection-delete-modal" data-index-delete-modal>
+                <form class="selection-delete-modal-panel" method="dialog">
+                    <div class="selection-delete-modal-copy stack gap-md">
+                        <div>
+                            <div class="section-kicker">Confirm delete</div>
+                            <h2>Delete selected clips?</h2>
+                        </div>
+                        <p class="muted" data-index-delete-message>
+                            This permanently deletes the selected clips from disk.
+                        </p>
+                    </div>
+                    <div class="selection-delete-modal-actions">
+                        <button class="selection-delete-modal-button selection-delete-modal-button-secondary"
+                                type="submit"
+                                value="cancel"
+                                data-index-delete-cancel>
+                            Cancel
+                        </button>
+                        <button class="selection-delete-modal-button selection-delete-modal-button-danger"
+                                type="submit"
+                                value="confirm"
+                                data-index-delete-confirm>
+                            Delete
+                        </button>
+                    </div>
+                </form>
+            </dialog>
+        {% endif %}
         <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
         {% block extra_scripts %}{% endblock %}
     </body>

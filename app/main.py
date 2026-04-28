@@ -5,8 +5,9 @@ from datetime import datetime
 import json
 import math
 from pathlib import Path
+import shutil
 
-from flask import Flask, abort, render_template, send_file, url_for
+from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 
 from .config import apply_settings
 from .sei import ensure_sei_sidecars, get_event_processing_marker_path, get_segment_sei_sidecar_path
@@ -173,6 +174,8 @@ def create_app() -> Flask:
             event_fsd_on_percent=event_fsd_on_percent,
             event_marker_time=event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
             initial_start_time=initial_start_time,
+            page_delete_event_path=event_summary.path,
+            page_delete_redirect_url=url_for("index"),
             page_title=f"{event_summary.day_label} Player | SentryManager",
             page_description=f"Review TeslaCam clips for {event_summary.name}.",
             page_shell_class="page-shell-full",
@@ -184,6 +187,49 @@ def create_app() -> Flask:
         event_summaries = discover_event_summaries(footage_root)
         day_groups = group_events_by_day(event_summaries)
         return render_template("index.html", day_groups=day_groups)
+
+    @app.post("/events/delete")
+    def delete_events():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Invalid delete request."}), 400
+
+        raw_event_paths = payload.get("eventPaths")
+        if not isinstance(raw_event_paths, list) or len(raw_event_paths) == 0:
+            return jsonify({"error": "Select at least one clip to delete."}), 400
+
+        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
+        event_directories: list[Path] = []
+        deleted_paths: list[str] = []
+        seen_directories: set[Path] = set()
+
+        for raw_event_path in raw_event_paths:
+            if not isinstance(raw_event_path, str) or not raw_event_path.strip():
+                return jsonify({"error": "Invalid clip selection."}), 400
+
+            normalized_event_path = Path(raw_event_path.strip())
+            if normalized_event_path in {Path("."), Path("")}:
+                return jsonify({"error": "Deleting the TeslaCam root is not allowed."}), 400
+
+            event_dir = (footage_root / normalized_event_path).resolve()
+            if not event_dir.is_dir() or not _is_within_root(event_dir, footage_root):
+                return jsonify({"error": f"Clip folder not found: {raw_event_path}"}), 404
+
+            if event_dir in seen_directories:
+                continue
+
+            seen_directories.add(event_dir)
+            event_directories.append(event_dir)
+            deleted_paths.append(str(normalized_event_path))
+
+        for event_dir in event_directories:
+            try:
+                shutil.rmtree(event_dir)
+            except OSError:
+                return jsonify({"error": f"Could not delete {event_dir.name}."}), 500
+
+        _EVENT_SUMMARY_CACHE.clear()
+        return jsonify({"deletedPaths": deleted_paths})
 
     return app
 
