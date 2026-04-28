@@ -89,6 +89,7 @@ function initEventPlayer() {
     const toggleButton = document.querySelector("[data-player-toggle]");
     const toggleIcon = document.querySelector("[data-player-toggle-icon]");
     const viewButtons = Array.from(document.querySelectorAll("[data-view-option]"));
+    const stageSurface = document.querySelector("[data-player-stage-surface]");
     const viewFrame = document.querySelector("[data-player-view-frame]");
     const compositeGrid = document.querySelector("[data-composite-grid]");
     const secondaryPlayers = {
@@ -121,6 +122,10 @@ function initEventPlayer() {
 
     function isCompositeView() {
         return getCompositeView(activeViewKey) !== null;
+    }
+
+    function clipHasTelemetry(clip) {
+        return Boolean(clip?.hasTelemetry);
     }
 
     function formatClockTime(totalSeconds) {
@@ -260,6 +265,11 @@ function initEventPlayer() {
     function syncTimelineUI() {
         const eventTime = pendingEventTime ?? (getClipStart(activeIndex) + player.currentTime);
         const totalDuration = getTotalDuration();
+        const activeClip = playlist[activeIndex] || null;
+
+        if (stageSurface) {
+            stageSurface.dataset.hasTelemetry = clipHasTelemetry(activeClip) ? "true" : "false";
+        }
 
         if (currentTimeNode) {
             currentTimeNode.textContent = formatClockTime(eventTime);
@@ -699,7 +709,11 @@ function initEventPlayer() {
     }
 
     function ensureTelemetryLoaded(clip) {
-        if (!clip?.telemetryUrl) {
+        if (!clip?.telemetryUrl || !clipHasTelemetry(clip)) {
+            if (clip) {
+                clip.telemetry = null;
+                clip.telemetryLoaded = true;
+            }
             return Promise.resolve(null);
         }
         if (clip.telemetryLoaded) {

@@ -25,7 +25,7 @@
 
     <section class="player-stage player-stage-single">
         {% if default_view_key %}
-            <div class="player-stage-surface">
+            <div class="player-stage-surface" data-player-stage-surface data-has-telemetry="true">
                 <div class="player-view-frame" data-player-view-frame data-active-view="{{ default_view_key }}">
                     <div class="player-video-shell player-video-shell-main">
                         <video class="event-player-video" data-event-player preload="metadata" playsinline muted>

@@ -543,6 +543,14 @@ dt {
     overflow: hidden;
 }
 
+.player-stage-surface[data-has-telemetry="false"] {
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.player-stage-surface[data-has-telemetry="false"] .player-status-bar {
+    display: none;
+}
+
 .player-view-frame {
     display: grid;
     grid-template-rows: minmax(0, 1fr);

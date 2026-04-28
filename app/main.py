@@ -159,6 +159,7 @@ def create_app() -> Flask:
                         "segmentLabel": clip.segment_label,
                         "fileName": clip.file_name,
                         "url": url_for("event_clip", clip_path=clip.file_path),
+                        "hasTelemetry": get_segment_sei_sidecar_path(event_dir, clip.segment_key).is_file(),
                         "telemetryUrl": url_for("event_telemetry", event_path=event_summary.path, segment_key=clip.segment_key),
                     }
                     for clip in clips
