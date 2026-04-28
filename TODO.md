@@ -5,6 +5,7 @@
 - The repo currently contains an initial Flask scaffold with Jinja templates, plain JS, Docker, Compose, README, data notes, and adapted AGENTS guidance.
 - Compose publishes the app on host port `8765` and mounts `data/TeslaCam` and `data/Previews` into the container under `/data`.
 - The starter homepage only performs shallow folder discovery; no real TeslaCam normalization, proxy generation, or export pipeline exists yet.
+- Index discovery now caches event summaries by event directory plus `event.json`/`thumb.png` mtimes, avoids SEI sidecar generation during homepage listing, and serves thumbnails with conditional caching.
 - The best next implementation slice is Phase 2: build reliable TeslaCam discovery plus `ffprobe`-backed metadata extraction before adding more UI.
 
 This file tracks the delivery plan for SentryManager as discrete implementation steps.

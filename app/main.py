@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -74,6 +73,12 @@ class EventClip:
     file_path: str
 
 
+_EVENT_SUMMARY_CACHE: dict[
+    tuple[str, tuple[tuple[str, int, int, int], ...]],
+    list[EventSummary],
+] = {}
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     apply_settings(app)
@@ -86,7 +91,7 @@ def create_app() -> Flask:
             abort(404)
         if not _is_within_root(thumbnail_path, footage_root):
             abort(404)
-        return send_file(thumbnail_path)
+        return send_file(thumbnail_path, conditional=True, max_age=3600)
 
     @app.route("/event-clips/<path:clip_path>")
     def event_clip(clip_path: str):
@@ -124,7 +129,13 @@ def create_app() -> Flask:
         if not _is_within_root(event_dir, footage_root):
             abort(404)
 
-        event_summary = summarize_event_dir(event_dir, footage_root)
+        clip_files = get_event_clip_files(event_dir)
+        if not clip_files:
+            abort(404)
+
+        ensure_sei_sidecars(clip_files)
+
+        event_summary = summarize_event_dir(event_dir, footage_root, clip_files=clip_files)
         if event_summary is None:
             abort(404)
 
@@ -155,7 +166,7 @@ def create_app() -> Flask:
             },
             event_has_autopilot_activity=event_processing_state.get("hasAutopilotActivity", False),
             event_has_steering_angle_data=event_processing_state.get("hasSteeringAngleData", False),
-            event_marker_time=event_summary.trigger_offset_seconds,
+            event_marker_time=event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
             initial_start_time=initial_start_time,
             page_title=f"{event_summary.day_label} Player | SentryManager",
             page_description=f"Review TeslaCam clips for {event_summary.name}.",
@@ -167,17 +178,7 @@ def create_app() -> Flask:
         footage_root = Path(app.config["TESLACAM_ROOT"])
         event_summaries = discover_event_summaries(footage_root)
         day_groups = group_events_by_day(event_summaries)
-        camera_counts = Counter(camera for event in event_summaries for camera in event.cameras)
-        total_clips = sum(event.clip_count for event in event_summaries)
-        return render_template(
-            "index.html",
-            footage_root=str(footage_root),
-            footage_root_exists=footage_root.exists(),
-            day_groups=day_groups,
-            event_count=len(event_summaries),
-            total_clips=total_clips,
-            camera_counts=dict(camera_counts),
-        )
+        return render_template("index.html", day_groups=day_groups)
 
     return app
 
@@ -186,6 +187,33 @@ def discover_event_summaries(footage_root: Path, limit: int | None = None) -> li
     if not footage_root.exists() or not footage_root.is_dir():
         return []
 
+    event_directories = discover_event_directories(footage_root)
+    cache_key = build_event_summary_cache_key(footage_root.resolve(), event_directories)
+    cached_summaries = _EVENT_SUMMARY_CACHE.get(cache_key)
+    if cached_summaries is None:
+        summaries: list[EventSummary] = []
+        seen_paths: set[Path] = set()
+
+        for event_dir in event_directories:
+            if event_dir in seen_paths:
+                continue
+            seen_paths.add(event_dir)
+            summary = summarize_event_dir(event_dir, footage_root)
+            if summary is None:
+                continue
+            summaries.append(summary)
+
+        cached_summaries = sorted(summaries, key=lambda event: event.timestamp or datetime.min, reverse=True)
+        _EVENT_SUMMARY_CACHE.clear()
+        _EVENT_SUMMARY_CACHE[cache_key] = cached_summaries
+
+    if limit is None:
+        return cached_summaries
+
+    return cached_summaries[:limit]
+
+
+def discover_event_directories(footage_root: Path) -> list[Path]:
     event_directories: list[Path] = []
 
     direct_mp4s = list(footage_root.glob("*.mp4"))
@@ -202,29 +230,46 @@ def discover_event_summaries(footage_root: Path, limit: int | None = None) -> li
             if grandchild.is_dir() and list(grandchild.glob("*.mp4")):
                 event_directories.append(grandchild)
 
-    summaries: list[EventSummary] = []
-    seen_paths: set[Path] = set()
-
-    for event_dir in event_directories:
-        if event_dir in seen_paths:
-            continue
-        seen_paths.add(event_dir)
-        summary = summarize_event_dir(event_dir, footage_root)
-        if summary is None:
-            continue
-        summaries.append(summary)
-        if limit is not None and len(summaries) >= limit:
-            break
-
-    return sorted(summaries, key=lambda event: event.timestamp or datetime.min, reverse=True)
+    return event_directories
 
 
-def summarize_event_dir(event_dir: Path, footage_root: Path) -> EventSummary | None:
-    clip_files = sorted(event_dir.glob("*.mp4"))
+def build_event_summary_cache_key(
+    footage_root: Path,
+    event_directories: list[Path],
+) -> tuple[str, tuple[tuple[str, int, int, int], ...]]:
+    return (
+        str(footage_root),
+        tuple(
+            (
+                str(event_dir.relative_to(footage_root) if event_dir != footage_root else Path(".")),
+                get_path_mtime_ns(event_dir),
+                get_path_mtime_ns(event_dir / "event.json"),
+                get_path_mtime_ns(event_dir / "thumb.png"),
+            )
+            for event_dir in event_directories
+        ),
+    )
+
+
+def get_path_mtime_ns(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return -1
+
+
+def get_event_clip_files(event_dir: Path) -> list[Path]:
+    return sorted(event_dir.glob("*.mp4"))
+
+
+def summarize_event_dir(
+    event_dir: Path,
+    footage_root: Path,
+    clip_files: list[Path] | None = None,
+) -> EventSummary | None:
+    clip_files = clip_files if clip_files is not None else get_event_clip_files(event_dir)
     if not clip_files:
         return None
-
-    ensure_sei_sidecars(clip_files)
 
     cameras = sorted({infer_camera_name(path.name) for path in clip_files}, key=camera_sort_key)
     segment_timestamps = [
@@ -236,8 +281,9 @@ def summarize_event_dir(event_dir: Path, footage_root: Path) -> EventSummary | N
     timestamp = infer_event_timestamp(event_dir.name)
     category = relative_path.parts[0] if len(relative_path.parts) > 1 else "TeslaCam"
     thumbnail_file = event_dir / "thumb.png"
-    location_label = load_event_location_label(event_dir)
-    trigger_offset_seconds = load_event_trigger_offset_seconds(event_dir, first_segment_timestamp)
+    event_payload = load_event_json_payload(event_dir)
+    location_label = extract_event_location_label(event_payload)
+    trigger_offset_seconds = extract_event_trigger_offset_seconds(event_payload, first_segment_timestamp)
     return EventSummary(
         name=event_dir.name if event_dir != footage_root else footage_root.name,
         path=str(relative_path),
@@ -370,8 +416,7 @@ def load_event_json_payload(event_dir: Path) -> dict[str, object] | None:
     return payload
 
 
-def load_event_location_label(event_dir: Path) -> str | None:
-    payload = load_event_json_payload(event_dir)
+def extract_event_location_label(payload: dict[str, object] | None) -> str | None:
     if payload is None:
         return None
 
@@ -383,11 +428,13 @@ def load_event_location_label(event_dir: Path) -> str | None:
     return ", ".join(location_parts)
 
 
-def load_event_trigger_offset_seconds(event_dir: Path, first_segment_timestamp: datetime | None) -> float | None:
+def extract_event_trigger_offset_seconds(
+    payload: dict[str, object] | None,
+    first_segment_timestamp: datetime | None,
+) -> float | None:
     if first_segment_timestamp is None:
         return None
 
-    payload = load_event_json_payload(event_dir)
     if payload is None:
         return None
 
