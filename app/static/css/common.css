@@ -667,7 +667,7 @@ dt {
 
 .player-status-item {
     display: grid;
-    grid-template-columns: 2.1rem 2.1rem auto 2.1rem;
+    grid-template-columns: 2.1rem 2.1rem auto 2.1rem 2.1rem;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
@@ -702,6 +702,11 @@ dt {
     width: 2rem;
     height: 2rem;
     transform-origin: center center;
+}
+
+.player-status-icon-emphasis {
+    width: 2rem;
+    height: 2rem;
 }
 
 .player-status-icon[hidden] {

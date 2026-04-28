@@ -87,6 +87,7 @@ function initEventPlayer() {
     const speedNode = document.querySelector("[data-player-speed]");
     const blinkerLeftNode = document.querySelector("[data-player-blinker-left]");
     const autopilotNode = document.querySelector("[data-player-autopilot]");
+    const brakeNode = document.querySelector("[data-player-brake]");
     const blinkerRightNode = document.querySelector("[data-player-blinker-right]");
     const fsdPercentNode = document.querySelector("[data-player-fsd-percent]");
     const scrubber = document.querySelector("[data-player-scrub]");
@@ -262,6 +263,16 @@ function initEventPlayer() {
         }
     }
 
+    function syncBrakeUI(eventTime) {
+        if (!brakeNode) {
+            return;
+        }
+
+        const sample = getTelemetrySampleAtEventTime(eventTime);
+        const brakeOn = Boolean(sample && (sample.presenceBits & BRAKE_PRESENT_MASK) && (sample.flags & BRAKE_FLAG_MASK));
+        brakeNode.hidden = !brakeOn;
+    }
+
     function syncSpeedUI(eventTime) {
         if (!speedNode) {
             return;
@@ -339,6 +350,7 @@ function initEventPlayer() {
         syncBlinkerUI(eventTime);
         syncAutopilotUI(eventTime);
         syncSpeedUI(eventTime);
+        syncBrakeUI(eventTime);
         syncFsdPercentUI();
     }
 
@@ -843,10 +855,12 @@ const SPEED_PRESENT_MASK = 1 << 3;
 const STEERING_ANGLE_PRESENT_MASK = 1 << 5;
 const BLINKER_LEFT_PRESENT_MASK = 1 << 6;
 const BLINKER_RIGHT_PRESENT_MASK = 1 << 7;
+const BRAKE_PRESENT_MASK = 1 << 8;
 const AUTOPILOT_PRESENT_MASK = 1 << 9;
 const AUTOPILOT_NONE_STATE = 0;
 const BLINKER_LEFT_FLAG_MASK = 0x01;
 const BLINKER_RIGHT_FLAG_MASK = 0x02;
+const BRAKE_FLAG_MASK = 0x04;
 const TELEMETRY_COLUMNS = [
     { key: "timeMs", ctor: Uint32Array },
     { key: "presenceBits", ctor: Uint16Array },

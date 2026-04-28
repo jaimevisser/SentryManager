@@ -72,6 +72,13 @@
                         </span>
                         <span class="player-status-value" data-player-speed></span>
                         <span class="player-status-icon-slot" aria-hidden="true">
+                            <img class="player-status-icon player-status-icon-emphasis"
+                                 data-player-brake
+                                 src="{{ url_for('static', filename='mdi/brake.svg') }}"
+                                 alt=""
+                                 hidden>
+                        </span>
+                        <span class="player-status-icon-slot" aria-hidden="true">
                             <img class="player-status-icon"
                                  data-player-blinker-right
                                  src="{{ url_for('static', filename='mdi/arrow-right-bold-outline.svg') }}"
