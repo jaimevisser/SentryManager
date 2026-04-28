@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Orange status light">
+  <defs>
+    <linearGradient id="bevelBg" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f0f0f"/>
+      <stop offset="100%" stop-color="#3a3a3a"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="45%" r="48%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="discFill" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#612112"/>
+      <stop offset="70%" stop-color="#351008"/>
+      <stop offset="100%" stop-color="#180603"/>
+    </radialGradient>
+    <linearGradient id="spokeFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7528"/>
+      <stop offset="100%" stop-color="#ff362c"/>
+    </linearGradient>
+    <radialGradient id="redUnderlay" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff362c"/>
+      <stop offset="40%" stop-color="#ff362c"/>
+      <stop offset="84%" stop-color="#8d2412"/>
+      <stop offset="90%" stop-color="#000000"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <radialGradient id="spokeTopGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#c74b11" stop-opacity="0"/>
+      <stop offset="48%" stop-color="#d85b0f" stop-opacity="0.06"/>
+      <stop offset="78%" stop-color="#f07a16" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#ffb04a" stop-opacity="0.04"/>
+    </radialGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0c0303"/>
+      <stop offset="72%" stop-color="#140504"/>
+      <stop offset="100%" stop-color="#320b07"/>
+    </radialGradient>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.2"/>
+    </filter>
+    <clipPath id="discClip">
+      <circle cx="160" cy="160" r="93"/>
+    </clipPath>
+    <path id="spoke" d="M155.5 88 C155.5 85.515 157.515 83.5 160 83.5 C162.485 83.5 164.5 85.515 164.5 88 L161.6 131 C161.6 132.657 160.884 134 160 134 C159.116 134 158.4 132.657 158.4 131 Z" fill="url(#spokeFill)"/>
+  </defs>
+
+  <circle cx="160" cy="160" r="112" fill="url(#bevelBg)"/>
+  <rect x="156" y="0" width="8" height="320" fill="#000000"/>
+  <circle cx="160" cy="160" r="94" fill="#000000"/>
+
+  <g clip-path="url(#discClip)" filter="url(#softGlow)">
+    <circle cx="160" cy="160" r="91" fill="url(#redUnderlay)"/>
+    <g opacity="0.98">
+      <use href="#spoke"/>
+      <use href="#spoke" transform="rotate(10 160 160)"/>
+      <use href="#spoke" transform="rotate(20 160 160)"/>
+      <use href="#spoke" transform="rotate(30 160 160)"/>
+      <use href="#spoke" transform="rotate(40 160 160)"/>
+      <use href="#spoke" transform="rotate(50 160 160)"/>
+      <use href="#spoke" transform="rotate(60 160 160)"/>
+      <use href="#spoke" transform="rotate(70 160 160)"/>
+      <use href="#spoke" transform="rotate(80 160 160)"/>
+      <use href="#spoke" transform="rotate(90 160 160)"/>
+      <use href="#spoke" transform="rotate(100 160 160)"/>
+      <use href="#spoke" transform="rotate(110 160 160)"/>
+      <use href="#spoke" transform="rotate(120 160 160)"/>
+      <use href="#spoke" transform="rotate(130 160 160)"/>
+      <use href="#spoke" transform="rotate(140 160 160)"/>
+      <use href="#spoke" transform="rotate(150 160 160)"/>
+      <use href="#spoke" transform="rotate(160 160 160)"/>
+      <use href="#spoke" transform="rotate(170 160 160)"/>
+      <use href="#spoke" transform="rotate(180 160 160)"/>
+      <use href="#spoke" transform="rotate(190 160 160)"/>
+      <use href="#spoke" transform="rotate(200 160 160)"/>
+      <use href="#spoke" transform="rotate(210 160 160)"/>
+      <use href="#spoke" transform="rotate(220 160 160)"/>
+      <use href="#spoke" transform="rotate(230 160 160)"/>
+      <use href="#spoke" transform="rotate(240 160 160)"/>
+      <use href="#spoke" transform="rotate(250 160 160)"/>
+      <use href="#spoke" transform="rotate(260 160 160)"/>
+      <use href="#spoke" transform="rotate(270 160 160)"/>
+      <use href="#spoke" transform="rotate(280 160 160)"/>
+      <use href="#spoke" transform="rotate(290 160 160)"/>
+      <use href="#spoke" transform="rotate(300 160 160)"/>
+      <use href="#spoke" transform="rotate(310 160 160)"/>
+      <use href="#spoke" transform="rotate(320 160 160)"/>
+      <use href="#spoke" transform="rotate(330 160 160)"/>
+      <use href="#spoke" transform="rotate(340 160 160)"/>
+      <use href="#spoke" transform="rotate(350 160 160)"/>
+    </g>
+    <circle cx="160" cy="160" r="76" fill="url(#spokeTopGlow)"/>
+    <circle cx="160" cy="160" r="20" fill="url(#centerGlow)"/>
+  </g>
+
+</svg>

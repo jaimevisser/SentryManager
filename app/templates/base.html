@@ -6,14 +6,21 @@
         <title>{{ page_title or "SentryManager" }}</title>
         <meta name="description"
               content="{{ page_description or 'Review Tesla dashcam and Sentry footage, choose camera angles on a timeline, and export a single polished video.' }}">
-          <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/favicon.svg') }}">
+                    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/sentry-eye.svg') }}">
         <link rel="stylesheet" href="{{ url_for('static', filename='css/common.css') }}">
         {% block extra_head %}{% endblock %}
     </head>
     <body>
         <div class="page-glow" aria-hidden="true"></div>
         <header class="site-header">
-            <a class="brand" href="/">SentryManager</a>
+            <a class="brand" href="/">
+                <span class="brand-wordmark">SentryManager</span>
+            </a>
+            {% if page_shell_class != "index-shell" %}
+                <div class="header-eye-collapsed" aria-hidden="true">
+                    <img class="header-eye-mark" src="{{ url_for('static', filename='images/sentry-eye-background.svg') }}" alt="">
+                </div>
+            {% endif %}
         </header>
         <main class="page-shell{% if page_shell_class %} {{ page_shell_class }}{% endif %}">
             {% block content %}{% endblock %}

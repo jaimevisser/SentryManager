@@ -1,13 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Orange status light">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="60 60 200 200" role="img" aria-label="Orange status light">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1d1d1d"/>
-      <stop offset="100%" stop-color="#1d1d1d"/>
-    </linearGradient>
-    <linearGradient id="bevelBg" x1="100%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#0f0f0f"/>
-      <stop offset="100%" stop-color="#3a3a3a"/>
-    </linearGradient>
     <radialGradient id="halo" cx="50%" cy="45%" r="48%">
       <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
       <stop offset="70%" stop-color="#ffffff" stop-opacity="0.45"/>
@@ -49,8 +41,6 @@
     <path id="spoke" d="M155.5 88 C155.5 85.515 157.515 83.5 160 83.5 C162.485 83.5 164.5 85.515 164.5 88 L161.6 131 C161.6 132.657 160.884 134 160 134 C159.116 134 158.4 132.657 158.4 131 Z" fill="url(#spokeFill)"/>
   </defs>
 
-  <rect width="320" height="320" fill="url(#bg)"/>
-  <circle cx="160" cy="160" r="112" fill="url(#bevelBg)"/>
   <rect x="156" y="0" width="8" height="320" fill="#000000"/>
   <circle cx="160" cy="160" r="94" fill="#000000"/>
 
