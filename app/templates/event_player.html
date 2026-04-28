@@ -9,47 +9,117 @@
                 <span>{{ event.location_label }}</span>
             {% endif %}
         </div>
-        {% if view_selector %}
-            <div class="camera-selector" role="tablist" aria-label="Camera selector">
-                {% for view in view_selector %}
-                    <button class="camera-selector-button{% if view.key == default_view_key %} is-active{% endif %}"
-                            type="button"
-                            data-view-option="{{ view.key }}"
-                            aria-pressed="{{ 'true' if view.key == default_view_key else 'false' }}">
-                        {{ view.label }}
-                    </button>
-                {% endfor %}
-            </div>
-        {% endif %}
     </section>
 
     <section class="player-stage player-stage-single">
         {% if default_view_key %}
             <div class="player-stage-surface" data-player-stage-surface data-has-telemetry="true">
-                <div class="player-view-frame" data-player-view-frame data-active-view="{{ default_view_key }}">
+                <div class="player-view-frame" data-player-view-frame data-layout="single" data-active-camera="{{ default_view_key }}">
+                    <div class="player-camera-overlay">
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-layout-option="single"
+                               aria-label="Single camera layout"
+                               aria-pressed="true">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/camera-layout-1.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-layout-option="double"
+                               aria-label="Two camera layout"
+                               aria-pressed="false">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/camera-layout-2.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-layout-option="triple"
+                               aria-label="Three camera layout"
+                               aria-pressed="false">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/camera-layout-3.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-camera-target="left_pillar"
+                               aria-label="Left pillar camera">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/arrow-top-left-thick.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-camera-target="front"
+                               aria-label="Front camera">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/arrow-up-thick.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-camera-target="right_pillar"
+                               aria-label="Right pillar camera">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/arrow-top-right-thick.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-camera-target="left_repeater"
+                               aria-label="Left repeater camera">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/arrow-bottom-left-thick.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-camera-target="back"
+                               aria-label="Rear camera">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/arrow-down-thick.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                       <button class="player-camera-overlay-button"
+                               type="button"
+                               data-camera-target="right_repeater"
+                               aria-label="Right repeater camera">
+                           <img class="player-camera-overlay-icon"
+                                src="{{ url_for('static', filename='mdi/arrow-bottom-right-thick.svg') }}"
+                                alt=""
+                                aria-hidden="true">
+                       </button>
+                    </div>
                     <div class="player-video-shell player-video-shell-main">
                         <video class="event-player-video" data-event-player preload="metadata" playsinline muted>
                             <source src="{{ playlist_payload[default_view_key][0].url }}" type="video/mp4">
                         </video>
                     </div>
-                    {% if ('left_repeater' in playlist_payload and 'right_repeater' in playlist_payload) or ('left_pillar' in playlist_payload and 'right_pillar' in playlist_payload) %}
-                        <div class="player-secondary-grid" data-composite-grid {% if default_view_key not in ['full_rear', 'full_front'] %}hidden{% endif %}>
-                            <div class="player-video-shell player-video-shell-secondary">
-                                <video class="event-player-video event-player-video-secondary"
-                                       data-secondary-slot="left"
-                                       preload="metadata"
-                                       playsinline
-                                       muted></video>
-                            </div>
-                            <div class="player-video-shell player-video-shell-secondary">
-                                <video class="event-player-video event-player-video-secondary"
-                                       data-secondary-slot="right"
-                                       preload="metadata"
-                                       playsinline
-                                       muted></video>
-                            </div>
-                        </div>
-                    {% endif %}
+                    <div class="player-video-shell player-video-shell-secondary" data-secondary-shell="left" hidden>
+                        <video class="event-player-video event-player-video-secondary"
+                               data-secondary-slot="left"
+                               preload="metadata"
+                               playsinline
+                               muted></video>
+                    </div>
+                    <div class="player-video-shell player-video-shell-secondary" data-secondary-shell="right" hidden>
+                        <video class="event-player-video event-player-video-secondary"
+                               data-secondary-slot="right"
+                               preload="metadata"
+                               playsinline
+                               muted></video>
+                    </div>
                 </div>
                 <div class="player-status-bar" data-player-status-bar>
                     <div class="player-status-spacer" aria-hidden="true"></div>
@@ -57,7 +127,7 @@
                         <span class="player-status-icon-slot" aria-hidden="true">
                             <img class="player-status-icon"
                                  data-player-blinker-left
-                                 src="{{ url_for('static', filename='mdi/arrow-left-bold-outline.svg') }}"
+                                 src="{{ url_for('static', filename='mdi/indicator-left.svg') }}"
                                  alt=""
                                  hidden>
                         </span>
@@ -81,7 +151,7 @@
                         <span class="player-status-icon-slot" aria-hidden="true">
                             <img class="player-status-icon"
                                  data-player-blinker-right
-                                 src="{{ url_for('static', filename='mdi/arrow-right-bold-outline.svg') }}"
+                                 src="{{ url_for('static', filename='mdi/indicator-right.svg') }}"
                                  alt=""
                                  hidden>
                         </span>

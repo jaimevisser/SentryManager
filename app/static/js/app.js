@@ -38,45 +38,10 @@ function initEventPlayer() {
         return;
     }
 
-    const compositeViews = {
-        full_rear: {
-            master: "back",
-            secondarySlots: {
-                left: "right_repeater",
-                right: "left_repeater",
-            },
-        },
-        full_front: {
-            master: "front",
-            secondarySlots: {
-                left: "left_pillar",
-                right: "right_pillar",
-            },
-        },
-        full_left: {
-            master: "left_repeater",
-            secondarySlots: {
-                right: "left_pillar",
-            },
-        },
-        full_right: {
-            master: "right_pillar",
-            secondarySlots: {
-                right: "right_repeater",
-            },
-        },
-    };
-
-    function getCompositeView(viewKey) {
-        return compositeViews[viewKey] || null;
-    }
-
-    function getMasterCameraKey(viewKey) {
-        return getCompositeView(viewKey)?.master || viewKey;
-    }
-
-    let activeViewKey = defaultViewKey;
-    let activeCameraKey = getMasterCameraKey(activeViewKey);
+    let activeLayout = "single";
+    let activeCameraKey = hasCameraPlaylist(defaultViewKey)
+        ? defaultViewKey
+        : CAMERA_LAYOUT_SEQUENCE.find((cameraKey) => hasCameraPlaylist(cameraKey)) || defaultViewKey;
     let playlist = allPlaylists[activeCameraKey];
     if (!Array.isArray(playlist) || playlist.length === 0) {
         return;
@@ -94,10 +59,10 @@ function initEventPlayer() {
     const eventMarker = document.querySelector("[data-player-event-marker]");
     const toggleButton = document.querySelector("[data-player-toggle]");
     const toggleIcon = document.querySelector("[data-player-toggle-icon]");
-    const viewButtons = Array.from(document.querySelectorAll("[data-view-option]"));
+    const layoutButtons = Array.from(document.querySelectorAll("[data-layout-option]"));
+    const cameraButtons = Array.from(document.querySelectorAll("[data-camera-target]"));
     const stageSurface = document.querySelector("[data-player-stage-surface]");
     const viewFrame = document.querySelector("[data-player-view-frame]");
-    const compositeGrid = document.querySelector("[data-composite-grid]");
     const secondaryPlayers = {
         left: document.querySelector('[data-secondary-slot="left"]'),
         right: document.querySelector('[data-secondary-slot="right"]'),
@@ -108,9 +73,7 @@ function initEventPlayer() {
         right: document.createElement("video"),
     };
     let activeIndex = 0;
-    let pendingSeekTime = null;
     let pendingEventTime = null;
-    let shouldResumeAfterSeek = false;
     let playlistReady = false;
     let isScrubbing = false;
     let activeLoadToken = 0;
@@ -126,12 +89,38 @@ function initEventPlayer() {
         preloadPlayer.playsInline = true;
     }
 
-    function isCompositeView() {
-        return getCompositeView(activeViewKey) !== null;
-    }
-
     function clipHasTelemetry(clip) {
         return Boolean(clip?.hasTelemetry);
+    }
+
+    function hasCameraPlaylist(cameraKey) {
+        return Array.isArray(allPlaylists[cameraKey]) && allPlaylists[cameraKey].length > 0;
+    }
+
+    function isCompositeView() {
+        return activeLayout !== "single";
+    }
+
+    function getCameraOffsetKey(cameraKey, offset) {
+        const currentIndex = CAMERA_LAYOUT_SEQUENCE.indexOf(cameraKey);
+        if (currentIndex < 0) {
+            return null;
+        }
+        const nextIndex = (currentIndex + offset + CAMERA_LAYOUT_SEQUENCE.length) % CAMERA_LAYOUT_SEQUENCE.length;
+        return CAMERA_LAYOUT_SEQUENCE[nextIndex];
+    }
+
+    function getSecondaryCameraKeyMap() {
+        if (activeLayout === "single") {
+            return { left: null, right: null };
+        }
+        if (activeLayout === "double") {
+            return { left: getCameraOffsetKey(activeCameraKey, -1), right: null };
+        }
+        return {
+            left: getCameraOffsetKey(activeCameraKey, -1),
+            right: getCameraOffsetKey(activeCameraKey, 1),
+        };
     }
 
     function formatClockTime(totalSeconds) {
@@ -337,15 +326,21 @@ function initEventPlayer() {
             }
         }
         if (viewFrame) {
-            viewFrame.dataset.activeView = activeViewKey;
+            viewFrame.dataset.layout = activeLayout;
+            viewFrame.dataset.activeCamera = activeCameraKey;
         }
-        if (compositeGrid) {
-            compositeGrid.hidden = !isCompositeView();
-        }
-        for (const button of viewButtons) {
-            const isActive = button.dataset.viewOption === activeViewKey;
+        for (const button of layoutButtons) {
+            const isActive = button.dataset.layoutOption === activeLayout;
             button.classList.toggle("is-active", isActive);
             button.setAttribute("aria-pressed", isActive ? "true" : "false");
+        }
+        for (const button of cameraButtons) {
+            const targetCameraKey = button.dataset.cameraTarget;
+            const isActive = targetCameraKey === activeCameraKey;
+            const isAvailable = Boolean(targetCameraKey && hasCameraPlaylist(targetCameraKey));
+            button.classList.toggle("is-active", isActive);
+            button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            button.disabled = !isAvailable;
         }
         syncBlinkerUI(eventTime);
         syncAutopilotUI(eventTime);
@@ -398,11 +393,14 @@ function initEventPlayer() {
     }
 
     function syncSecondaryPlayers(offset, shouldPlay) {
-        const compositeView = getCompositeView(activeViewKey);
-        if (!compositeView) {
+        const secondaryCameraKeys = getSecondaryCameraKeyMap();
+        if (!isCompositeView()) {
             for (const secondaryPlayer of Object.values(secondaryPlayers)) {
                 if (secondaryPlayer) {
                     secondaryPlayer.pause();
+                    if (secondaryPlayer.parentElement) {
+                        secondaryPlayer.parentElement.hidden = true;
+                    }
                 }
             }
             return;
@@ -419,8 +417,8 @@ function initEventPlayer() {
             }
 
             const secondaryShell = secondaryPlayer.parentElement;
-            const cameraKey = compositeView.secondarySlots[slotKey];
-            if (!cameraKey) {
+            const cameraKey = secondaryCameraKeys[slotKey];
+            if (!cameraKey || !hasCameraPlaylist(cameraKey)) {
                 secondaryPlayer.pause();
                 if (secondaryShell) {
                     secondaryShell.hidden = true;
@@ -512,8 +510,8 @@ function initEventPlayer() {
         }
 
         const targets = [{ element: player, clip: masterClip }];
-        const compositeView = getCompositeView(activeViewKey);
-        if (!compositeView) {
+        const secondaryCameraKeys = getSecondaryCameraKeyMap();
+        if (!isCompositeView()) {
             return targets;
         }
 
@@ -522,8 +520,8 @@ function initEventPlayer() {
                 continue;
             }
 
-            const cameraKey = compositeView.secondarySlots[slotKey];
-            if (!cameraKey) {
+            const cameraKey = secondaryCameraKeys[slotKey];
+            if (!cameraKey || !hasCameraPlaylist(cameraKey)) {
                 continue;
             }
 
@@ -588,6 +586,8 @@ function initEventPlayer() {
             element.dataset.shouldPlay = shouldPlay ? "true" : "false";
             ensureVideoReady(element, clip.url);
         }
+
+        syncSecondaryPlayers(targetTime, shouldPlay);
 
         preloadNextSegment(index + 1);
     }
@@ -792,24 +792,17 @@ function initEventPlayer() {
         return clip.telemetryPromise;
     }
 
-    function switchView(nextViewKey) {
-        const nextCameraKey = getMasterCameraKey(nextViewKey);
-        if (!allPlaylists[nextCameraKey] || nextViewKey === activeViewKey) {
+    function switchCamera(nextCameraKey) {
+        if (!hasCameraPlaylist(nextCameraKey) || nextCameraKey === activeCameraKey) {
             return;
         }
 
         const currentEventTime = pendingEventTime ?? (getClipStart(activeIndex) + player.currentTime);
         const wantsPlayback = !player.paused;
-        if (isCompositeView() && !getCompositeView(nextViewKey)) {
-            clearSecondaryPlayers(true);
-        }
-        activeViewKey = nextViewKey;
         activeCameraKey = nextCameraKey;
         playlist = allPlaylists[activeCameraKey];
         activeIndex = 0;
-        pendingSeekTime = null;
         pendingEventTime = currentEventTime;
-        shouldResumeAfterSeek = false;
         playlistReady = false;
         syncTimelineUI();
 
@@ -817,20 +810,43 @@ function initEventPlayer() {
             playlistReady = true;
             preloadTelemetryForPlaylist(playlist);
             pendingEventTime = currentEventTime;
-            if (wantsPlayback) {
-                shouldResumeAfterSeek = true;
-            }
             seekToEventTime(currentEventTime, { autoplay: wantsPlayback });
         });
     }
 
-    for (const button of viewButtons) {
+    function switchLayout(nextLayout) {
+        if (!["single", "double", "triple"].includes(nextLayout) || nextLayout === activeLayout) {
+            return;
+        }
+
+        const currentEventTime = pendingEventTime ?? (getClipStart(activeIndex) + player.currentTime);
+        const wantsPlayback = !player.paused;
+        activeLayout = nextLayout;
+        pendingEventTime = currentEventTime;
+        syncTimelineUI();
+        if (!playlistReady) {
+            return;
+        }
+        seekToEventTime(currentEventTime, { autoplay: wantsPlayback });
+    }
+
+    for (const button of layoutButtons) {
         button.addEventListener("click", () => {
-            const nextViewKey = button.dataset.viewOption;
-            if (!nextViewKey) {
+            const nextLayout = button.dataset.layoutOption;
+            if (!nextLayout) {
                 return;
             }
-            switchView(nextViewKey);
+            switchLayout(nextLayout);
+        });
+    }
+
+    for (const button of cameraButtons) {
+        button.addEventListener("click", () => {
+            const nextCameraKey = button.dataset.cameraTarget;
+            if (!nextCameraKey) {
+                return;
+            }
+            switchCamera(nextCameraKey);
         });
     }
 
@@ -851,6 +867,7 @@ function initEventPlayer() {
 const TELEMETRY_MAGIC = "SEI1";
 const TELEMETRY_FORMAT_VERSION = 1;
 const TELEMETRY_HEADER_STRUCT_SIZE = 20;
+const CAMERA_LAYOUT_SEQUENCE = ["front", "right_pillar", "right_repeater", "back", "left_repeater", "left_pillar"];
 const SPEED_PRESENT_MASK = 1 << 3;
 const STEERING_ANGLE_PRESENT_MASK = 1 << 5;
 const BLINKER_LEFT_PRESENT_MASK = 1 << 6;

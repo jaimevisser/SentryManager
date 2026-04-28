@@ -44,6 +44,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Add a steering-wheel autopilot indicator with white/blue active states backed by `sentrymanager.json` event metadata.
 - [x] Reserve a brake-indicator slot beside speed and show it when brake-applied telemetry is active.
 - [x] Show event-level `fsdOnPercent` on the right side of the player telemetry bar during playback.
+- [x] Overlay a transparent 3x3 camera icon grid on the top-left of the main player image.
+- [x] Replace the old camera selector row with overlay-driven 1/2/3 camera layouts and camera-target arrows.
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
 
 ## Phase 4: Editing Model
