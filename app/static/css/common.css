@@ -616,6 +616,7 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem 1rem;
+    padding: 0 0.9rem;
     color: var(--muted);
     font-size: 0.92rem;
     line-height: 1.5;
