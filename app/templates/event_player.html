@@ -145,6 +145,7 @@
                                      alt=""
                                      hidden>
                             </div>
+                            <div class="player-safe-zone-cell" aria-hidden="true"></div>
                         </div>
                     </div>
                     <div class="player-safe-zone player-safe-zone-right" data-player-safe-zone="right" hidden>
@@ -156,6 +157,11 @@
                                      alt=""
                                      hidden>
                             </div>
+                            <div class="player-safe-zone-cell">
+                                <span class="player-safe-zone-value"
+                                      data-player-speed
+                                      hidden></span>
+                            </div>
                             <div class="player-safe-zone-cell" aria-hidden="true">
                                 <img class="player-safe-zone-icon player-safe-zone-icon-autopilot"
                                      data-player-autopilot
@@ -166,7 +172,7 @@
                                      {% if not (event_has_autopilot_activity or event_has_steering_angle_data) %}hidden{% endif %}>
                             </div>
                             <div class="player-safe-zone-cell">
-                                <span class="player-safe-zone-text"
+                                <span class="player-safe-zone-text player-safe-zone-text-compact"
                                       data-player-fsd-percent
                                       {% if event_fsd_on_percent is none %}hidden{% endif %}>FSD {{ event_fsd_on_percent|round|int if event_fsd_on_percent is not none else '' }}%</span>
                             </div>

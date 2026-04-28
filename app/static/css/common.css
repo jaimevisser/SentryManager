@@ -751,10 +751,10 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
 
 .player-safe-zone-stack {
     display: grid;
-    grid-template-rows: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
     width: 100%;
     height: 100%;
-    gap: max(0.2rem, calc(var(--player-safe-zone-height, 0px) * 0.04));
+    gap: max(0.16rem, calc(var(--player-safe-zone-height, 0px) * 0.028));
 }
 
 .player-safe-zone-cell {
@@ -769,8 +769,8 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: min(calc(var(--player-safe-zone-width, 0px) * 0.4), calc(var(--player-safe-zone-height, 0px) * 0.22));
-    height: min(calc(var(--player-safe-zone-width, 0px) * 0.4), calc(var(--player-safe-zone-height, 0px) * 0.22));
+    width: min(calc(var(--player-safe-zone-width, 0px) * 0.34), calc(var(--player-safe-zone-height, 0px) * 0.16));
+    height: min(calc(var(--player-safe-zone-width, 0px) * 0.34), calc(var(--player-safe-zone-height, 0px) * 0.16));
 }
 
 .player-heading-indicator[hidden] {
@@ -779,7 +779,7 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
 
 .player-safe-zone-icon {
     display: block;
-    width: min(calc(var(--player-safe-zone-width, 0px) * 0.4), calc(var(--player-safe-zone-height, 0px) * 0.22));
+    width: min(calc(var(--player-safe-zone-width, 0px) * 0.34), calc(var(--player-safe-zone-height, 0px) * 0.16));
     height: auto;
     max-width: 100%;
     max-height: 100%;
@@ -788,7 +788,7 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
 
 .player-safe-zone-icon-autopilot,
 .player-safe-zone-icon-emphasis {
-    width: min(calc(var(--player-safe-zone-width, 0px) * 0.48), calc(var(--player-safe-zone-height, 0px) * 0.26));
+    width: min(calc(var(--player-safe-zone-width, 0px) * 0.4), calc(var(--player-safe-zone-height, 0px) * 0.19));
 }
 
 .player-safe-zone-icon-heading,
@@ -808,7 +808,7 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
     align-items: center;
     justify-content: center;
     color: rgba(0, 0, 0, 0.88);
-    font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.12), calc(var(--player-safe-zone-height, 0px) * 0.14));
+    font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.1), calc(var(--player-safe-zone-height, 0px) * 0.1));
     font-weight: 700;
     line-height: 1;
     text-transform: uppercase;
@@ -825,7 +825,7 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
 
 .player-safe-zone-text {
     color: rgba(240, 248, 255, 0.96);
-    font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.16), calc(var(--player-safe-zone-height, 0px) * 0.18));
+    font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.12), calc(var(--player-safe-zone-height, 0px) * 0.1));
     font-weight: 700;
     letter-spacing: 0.08em;
     line-height: 1;
@@ -837,6 +837,39 @@ body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
 
 .player-safe-zone-text[hidden] {
     display: none;
+}
+
+.player-safe-zone-text-compact {
+    font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.1), calc(var(--player-safe-zone-height, 0px) * 0.088));
+}
+
+.player-safe-zone-value {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: max(0.1rem, calc(var(--player-safe-zone-width, 0px) * 0.015));
+    color: rgba(240, 248, 255, 0.96);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 0.35rem rgba(0, 0, 0, 0.78);
+}
+
+.player-safe-zone-value[hidden] {
+    display: none;
+}
+
+.player-safe-zone-value-number {
+    font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.14), calc(var(--player-safe-zone-height, 0px) * 0.11));
+    font-weight: 700;
+    line-height: 1;
+}
+
+.player-safe-zone-value-unit {
+    font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.08), calc(var(--player-safe-zone-height, 0px) * 0.07));
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-transform: lowercase;
 }
 
 .player-camera-overlay-button {

@@ -697,7 +697,7 @@ function initEventPlayer() {
             return "";
         }
         const roundedSpeed = Math.round(speedKph);
-        return `<span class="player-status-value-number">${roundedSpeed}</span><span class="player-status-value-unit">km/h</span>`;
+        return `<span class="player-safe-zone-value-number">${roundedSpeed}</span><span class="player-safe-zone-value-unit">km/h</span>`;
     }
 
     function formatFsdPercentText(fsdOnPercent) {
@@ -856,9 +856,11 @@ function initEventPlayer() {
         }
         const speedKph = getSpeedKphAtEventTime(eventTime);
         if (speedKph === null) {
+            speedNode.hidden = true;
             speedNode.textContent = "";
             return;
         }
+        speedNode.hidden = false;
         speedNode.innerHTML = formatSpeedText(speedKph);
     }
 
@@ -1269,16 +1271,31 @@ function initEventPlayer() {
         window.addEventListener("resize", scheduleStageSafeZoneUpdate);
     }
 
+    function togglePlayback() {
+        if (player.paused) {
+            const playPromise = player.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {});
+            }
+            return;
+        }
+        player.pause();
+    }
+
     if (toggleButton) {
-        toggleButton.addEventListener("click", () => {
-            if (player.paused) {
-                const playPromise = player.play();
-                if (playPromise && typeof playPromise.catch === "function") {
-                    playPromise.catch(() => {});
-                }
+        toggleButton.addEventListener("click", togglePlayback);
+    }
+
+    if (viewFrame) {
+        viewFrame.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) {
                 return;
             }
-            player.pause();
+            if (target.closest(".player-camera-overlay-button")) {
+                return;
+            }
+            togglePlayback();
         });
     }
 
