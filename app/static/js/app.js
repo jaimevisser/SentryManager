@@ -123,6 +123,17 @@ function initEventPlayer() {
         };
     }
 
+    function getVisibleCameraKeys() {
+        const visibleCameraKeys = new Set([activeCameraKey]);
+        const secondaryCameraKeys = getSecondaryCameraKeyMap();
+        for (const cameraKey of Object.values(secondaryCameraKeys)) {
+            if (cameraKey && hasCameraPlaylist(cameraKey)) {
+                visibleCameraKeys.add(cameraKey);
+            }
+        }
+        return visibleCameraKeys;
+    }
+
     function formatClockTime(totalSeconds) {
         const safeSeconds = Math.max(0, Math.floor(totalSeconds));
         const hours = Math.floor(safeSeconds / 3600);
@@ -331,16 +342,25 @@ function initEventPlayer() {
         }
         for (const button of layoutButtons) {
             const isActive = button.dataset.layoutOption === activeLayout;
+            const icon = button.querySelector(".player-camera-overlay-icon");
             button.classList.toggle("is-active", isActive);
             button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            if (icon?.dataset.activeSrc && icon?.dataset.inactiveSrc) {
+                icon.src = isActive ? icon.dataset.activeSrc : icon.dataset.inactiveSrc;
+            }
         }
+        const visibleCameraKeys = getVisibleCameraKeys();
         for (const button of cameraButtons) {
             const targetCameraKey = button.dataset.cameraTarget;
-            const isActive = targetCameraKey === activeCameraKey;
+            const isActive = Boolean(targetCameraKey && visibleCameraKeys.has(targetCameraKey));
             const isAvailable = Boolean(targetCameraKey && hasCameraPlaylist(targetCameraKey));
+            const icon = button.querySelector(".player-camera-overlay-icon");
             button.classList.toggle("is-active", isActive);
             button.setAttribute("aria-pressed", isActive ? "true" : "false");
             button.disabled = !isAvailable;
+            if (icon?.dataset.activeSrc && icon?.dataset.inactiveSrc) {
+                icon.src = isActive ? icon.dataset.activeSrc : icon.dataset.inactiveSrc;
+            }
         }
         syncBlinkerUI(eventTime);
         syncAutopilotUI(eventTime);
