@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import math
 from pathlib import Path
 
 from flask import Flask, abort, render_template, send_file, url_for
@@ -146,6 +147,7 @@ def create_app() -> Flask:
 
         default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
         event_processing_state = load_event_processing_state(event_dir)
+        event_fsd_on_percent = get_event_fsd_on_percent(event_processing_state)
         initial_start_time = get_initial_player_start_time(event_summary)
         return render_template(
             "event_player.html",
@@ -168,6 +170,7 @@ def create_app() -> Flask:
             },
             event_has_autopilot_activity=event_processing_state.get("hasAutopilotActivity", False),
             event_has_steering_angle_data=event_processing_state.get("hasSteeringAngleData", False),
+            event_fsd_on_percent=event_fsd_on_percent,
             event_marker_time=event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
             initial_start_time=initial_start_time,
             page_title=f"{event_summary.day_label} Player | SentryManager",
@@ -523,6 +526,18 @@ def load_event_processing_state(event_dir: Path) -> dict[str, object]:
         return {}
 
     return payload
+
+
+def get_event_fsd_on_percent(event_processing_state: dict[str, object]) -> float | None:
+    raw_fsd_on_percent = event_processing_state.get("fsdOnPercent")
+    if not isinstance(raw_fsd_on_percent, int | float):
+        return None
+
+    fsd_on_percent = float(raw_fsd_on_percent)
+    if not math.isfinite(fsd_on_percent):
+        return None
+
+    return max(0.0, min(100.0, fsd_on_percent))
 
 
 def get_initial_player_start_time(event: EventSummary) -> float:

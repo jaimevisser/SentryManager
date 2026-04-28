@@ -52,6 +52,7 @@
                     {% endif %}
                 </div>
                 <div class="player-status-bar" data-player-status-bar>
+                    <div class="player-status-spacer" aria-hidden="true"></div>
                     <div class="player-status-item">
                         <span class="player-status-icon-slot" aria-hidden="true">
                             <img class="player-status-icon"
@@ -78,6 +79,9 @@
                                  hidden>
                         </span>
                     </div>
+                    <div class="player-status-summary"
+                         data-player-fsd-percent
+                         {% if event_fsd_on_percent is none %}hidden{% endif %}>FSD {{ event_fsd_on_percent|round|int if event_fsd_on_percent is not none else '' }}%</div>
                 </div>
             </div>
             <div class="player-controls" data-player-controls>
@@ -111,7 +115,7 @@
                     </div>
                 </div>
             </div>
-            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data}}|tojson }}</script>
+            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data, 'fsdOnPercent': event_fsd_on_percent}}|tojson }}</script>
         {% else %}
             <div class="player-empty-state">No camera clips were found for this event yet.</div>
         {% endif %}

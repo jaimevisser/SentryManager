@@ -24,6 +24,10 @@ function initEventPlayer() {
     const eventFlags = playlistConfig?.eventFlags;
     const eventHasAutopilotActivity = Boolean(eventFlags?.hasAutopilotActivity);
     const eventHasSteeringAngleData = Boolean(eventFlags?.hasSteeringAngleData);
+    const rawEventFsdOnPercent = eventFlags?.fsdOnPercent;
+    const eventFsdOnPercent = typeof rawEventFsdOnPercent === "number" && Number.isFinite(rawEventFsdOnPercent)
+        ? Math.max(0, Math.min(100, rawEventFsdOnPercent))
+        : null;
     const eventMarkerTime = typeof rawEventMarkerTime === "number" && Number.isFinite(rawEventMarkerTime)
         ? rawEventMarkerTime
         : null;
@@ -84,6 +88,7 @@ function initEventPlayer() {
     const blinkerLeftNode = document.querySelector("[data-player-blinker-left]");
     const autopilotNode = document.querySelector("[data-player-autopilot]");
     const blinkerRightNode = document.querySelector("[data-player-blinker-right]");
+    const fsdPercentNode = document.querySelector("[data-player-fsd-percent]");
     const scrubber = document.querySelector("[data-player-scrub]");
     const eventMarker = document.querySelector("[data-player-event-marker]");
     const toggleButton = document.querySelector("[data-player-toggle]");
@@ -153,6 +158,13 @@ function initEventPlayer() {
         }
         const roundedSpeed = Math.round(speedKph);
         return `<span class="player-status-value-number">${roundedSpeed}</span><span class="player-status-value-unit">km/h</span>`;
+    }
+
+    function formatFsdPercentText(fsdOnPercent) {
+        if (fsdOnPercent === null) {
+            return "";
+        }
+        return `FSD ${Math.round(fsdOnPercent)}%`;
     }
 
     function findTelemetrySampleIndex(timeMs, telemetry) {
@@ -262,6 +274,21 @@ function initEventPlayer() {
         speedNode.innerHTML = formatSpeedText(speedKph);
     }
 
+    function syncFsdPercentUI() {
+        if (!fsdPercentNode) {
+            return;
+        }
+
+        if (eventFsdOnPercent === null) {
+            fsdPercentNode.hidden = true;
+            fsdPercentNode.textContent = "";
+            return;
+        }
+
+        fsdPercentNode.hidden = false;
+        fsdPercentNode.textContent = formatFsdPercentText(eventFsdOnPercent);
+    }
+
     function syncTimelineUI() {
         const eventTime = pendingEventTime ?? (getClipStart(activeIndex) + player.currentTime);
         const totalDuration = getTotalDuration();
@@ -312,6 +339,7 @@ function initEventPlayer() {
         syncBlinkerUI(eventTime);
         syncAutopilotUI(eventTime);
         syncSpeedUI(eventTime);
+        syncFsdPercentUI();
     }
 
     function findClipForEventTime(eventTime) {

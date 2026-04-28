@@ -188,6 +188,6 @@ These sidecars are generated during clip discovery, not deferred until playback.
 
 The `front` camera is used as the primary extraction source when it exists. If a segment has no `front` clip, the app falls back to the first available camera clip for that segment. The telemetry payload is stored in the same ArrayBuffer-oriented columnar binary layout that the frontend can consume later without needing a second conversion step.
 
-Each processed event folder also gets a `sentrymanager.json` file. That marker now carries lightweight event-level metadata such as `hasAutopilotActivity`, which lets the player decide whether to render the steering-wheel indicator without rescanning every segment on page load.
+Each processed event folder also gets a `sentrymanager.json` file. That marker now carries lightweight event-level metadata such as `hasAutopilotActivity`, and when autopilot-state SEI samples are present it also stores `fsdOnPercent` for the share of observed clip time where Tesla reported a nonzero autopilot state. This lets the app surface event-level autopilot context without rescanning every segment on page load.
 
 If a segment produces no SEI samples, the app does not create a telemetry sidecar for that segment. Instead, it writes a `sentrymanager.json` file containing `{}` into the event folder so it is still clear that the folder has been processed.

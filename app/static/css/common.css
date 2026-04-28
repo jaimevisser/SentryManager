@@ -652,13 +652,17 @@ dt {
 }
 
 .player-status-bar {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    justify-content: center;
     min-height: 3.35rem;
     padding: 0.7rem 1rem 0.8rem;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(6, 17, 26, 0.88) 100%);
+}
+
+.player-status-spacer {
+    min-width: 0;
 }
 
 .player-status-item {
@@ -668,6 +672,16 @@ dt {
     justify-content: center;
     gap: 0.4rem;
     text-align: center;
+}
+
+.player-status-summary {
+    justify-self: end;
+    color: rgba(240, 248, 255, 0.92);
+    font-size: 0.86rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
 }
 
 .player-status-icon-slot {

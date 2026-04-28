@@ -94,6 +94,8 @@ class SegmentTelemetryResult:
     sidecar_path: Path | None = None
     has_autopilot_activity: bool = False
     has_steering_angle_data: bool = False
+    autopilot_observed_duration_ms: int = 0
+    autopilot_active_duration_ms: int = 0
 
 
 def get_sei_sidecar_path(clip_file: Path) -> Path:
@@ -145,6 +147,8 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
     segments: dict[tuple[Path, str], dict[str, Path]] = {}
     event_autopilot_activity: dict[Path, bool] = {}
     event_steering_angle_data: dict[Path, bool] = {}
+    event_autopilot_observed_duration_ms: dict[Path, int] = {}
+    event_autopilot_active_duration_ms: dict[Path, int] = {}
     for clip_file in clip_files:
         segment_key, camera_key = split_clip_stem(clip_file.stem)
         if camera_key == "unknown":
@@ -159,6 +163,12 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
             continue
         event_autopilot_activity[event_dir] = event_autopilot_activity.get(event_dir, False) or result.has_autopilot_activity
         event_steering_angle_data[event_dir] = event_steering_angle_data.get(event_dir, False) or result.has_steering_angle_data
+        event_autopilot_observed_duration_ms[event_dir] = (
+            event_autopilot_observed_duration_ms.get(event_dir, 0) + result.autopilot_observed_duration_ms
+        )
+        event_autopilot_active_duration_ms[event_dir] = (
+            event_autopilot_active_duration_ms.get(event_dir, 0) + result.autopilot_active_duration_ms
+        )
 
     for event_dir, _ in segments:
         try:
@@ -166,6 +176,10 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
                 event_dir,
                 event_autopilot_activity.get(event_dir, False),
                 event_steering_angle_data.get(event_dir, False),
+                calculate_autopilot_on_percentage(
+                    event_autopilot_active_duration_ms.get(event_dir, 0),
+                    event_autopilot_observed_duration_ms.get(event_dir, 0),
+                ),
             )
         except OSError:
             continue
@@ -179,13 +193,21 @@ def ensure_segment_sei_sidecar(event_dir: Path, segment_key: str, camera_files: 
         return SegmentTelemetryResult()
 
     sidecar_path = get_segment_sei_sidecar_path(event_dir, segment_key)
-    payload, has_autopilot_activity, has_steering_angle_data = build_sei_sidecar_payload(source_clip)
+    (
+        payload,
+        has_autopilot_activity,
+        has_steering_angle_data,
+        autopilot_observed_duration_ms,
+        autopilot_active_duration_ms,
+    ) = build_sei_sidecar_payload(source_clip)
     if payload is None:
         if sidecar_path.exists():
             sidecar_path.unlink()
         return SegmentTelemetryResult(
             has_autopilot_activity=has_autopilot_activity,
             has_steering_angle_data=has_steering_angle_data,
+            autopilot_observed_duration_ms=autopilot_observed_duration_ms,
+            autopilot_active_duration_ms=autopilot_active_duration_ms,
         )
 
     if sidecar_path.exists():
@@ -193,6 +215,8 @@ def ensure_segment_sei_sidecar(event_dir: Path, segment_key: str, camera_files: 
             sidecar_path=sidecar_path,
             has_autopilot_activity=has_autopilot_activity,
             has_steering_angle_data=has_steering_angle_data,
+            autopilot_observed_duration_ms=autopilot_observed_duration_ms,
+            autopilot_active_duration_ms=autopilot_active_duration_ms,
         )
 
     temp_path = sidecar_path.with_name(f"{sidecar_path.name}.tmp-{os.getpid()}")
@@ -202,21 +226,28 @@ def ensure_segment_sei_sidecar(event_dir: Path, segment_key: str, camera_files: 
         sidecar_path=sidecar_path,
         has_autopilot_activity=has_autopilot_activity,
         has_steering_angle_data=has_steering_angle_data,
+        autopilot_observed_duration_ms=autopilot_observed_duration_ms,
+        autopilot_active_duration_ms=autopilot_active_duration_ms,
     )
 
 
-def ensure_event_processing_marker(event_dir: Path, has_autopilot_activity: bool, has_steering_angle_data: bool) -> Path:
+def ensure_event_processing_marker(
+    event_dir: Path,
+    has_autopilot_activity: bool,
+    has_steering_angle_data: bool,
+    autopilot_on_percent: float | None,
+) -> Path:
     marker_path = get_event_processing_marker_path(event_dir)
     event_payload = load_event_json_payload(event_dir)
     event_category_label = extract_event_category_label(event_payload)
-    marker_payload = json.dumps(
-        {
-            "hasAutopilotActivity": has_autopilot_activity,
-            "hasSteeringAngleData": has_steering_angle_data,
-            "eventCategoryLabel": event_category_label,
-        },
-        separators=(",", ":"),
-    )
+    marker_payload_value: dict[str, object] = {
+        "hasAutopilotActivity": has_autopilot_activity,
+        "hasSteeringAngleData": has_steering_angle_data,
+        "eventCategoryLabel": event_category_label,
+    }
+    if autopilot_on_percent is not None:
+        marker_payload_value["fsdOnPercent"] = autopilot_on_percent
+    marker_payload = json.dumps(marker_payload_value, separators=(",", ":"))
     if marker_path.exists():
         try:
             if marker_path.read_text(encoding="utf-8") == marker_payload:
@@ -230,21 +261,53 @@ def ensure_event_processing_marker(event_dir: Path, has_autopilot_activity: bool
     return marker_path
 
 
-def build_sei_sidecar_payload(clip_file: Path) -> tuple[bytes | None, bool, bool]:
+def build_sei_sidecar_payload(clip_file: Path) -> tuple[bytes | None, bool, bool, int, int]:
     clip_bytes = clip_file.read_bytes()
-    samples = extract_sei_samples(clip_bytes)
-    has_autopilot_activity = any(
-        (sample.presence_bits & (1 << FIELD_AUTOPILOT_STATE)) and sample.autopilot_state != 0
-        for sample in samples
-    )
+    samples, clip_duration_ms = extract_sei_samples(clip_bytes)
+    autopilot_observed_duration_ms, autopilot_active_duration_ms = calculate_autopilot_durations(samples, clip_duration_ms)
+    has_autopilot_activity = autopilot_active_duration_ms > 0
     has_steering_angle_data = any(sample.presence_bits & (1 << FIELD_STEERING_WHEEL_ANGLE) for sample in samples)
     if not samples:
-        return None, has_autopilot_activity, has_steering_angle_data
+        return None, has_autopilot_activity, has_steering_angle_data, 0, 0
     schema_version = max((sample.message_version for sample in samples), default=0)
-    return serialize_sei_samples(samples, schema_version), has_autopilot_activity, has_steering_angle_data
+    return (
+        serialize_sei_samples(samples, schema_version),
+        has_autopilot_activity,
+        has_steering_angle_data,
+        autopilot_observed_duration_ms,
+        autopilot_active_duration_ms,
+    )
 
 
-def extract_sei_samples(clip_bytes: bytes) -> list[SeiSample]:
+def calculate_autopilot_durations(samples: list[SeiSample], clip_duration_ms: int) -> tuple[int, int]:
+    if not samples or clip_duration_ms <= 0:
+        return 0, 0
+
+    observed_duration_ms = 0
+    active_duration_ms = 0
+    for index, sample in enumerate(samples):
+        next_time_ms = clip_duration_ms
+        if index + 1 < len(samples):
+            next_time_ms = samples[index + 1].time_ms
+        interval_duration_ms = max(0, next_time_ms - sample.time_ms)
+        if interval_duration_ms == 0:
+            continue
+        if not (sample.presence_bits & (1 << FIELD_AUTOPILOT_STATE)):
+            continue
+        observed_duration_ms += interval_duration_ms
+        if sample.autopilot_state != 0:
+            active_duration_ms += interval_duration_ms
+
+    return observed_duration_ms, active_duration_ms
+
+
+def calculate_autopilot_on_percentage(active_duration_ms: int, observed_duration_ms: int) -> float | None:
+    if observed_duration_ms <= 0:
+        return None
+    return round((active_duration_ms / observed_duration_ms) * 100, 2)
+
+
+def extract_sei_samples(clip_bytes: bytes) -> tuple[list[SeiSample], int]:
     frame_durations_ms = extract_frame_durations_ms(clip_bytes)
     media_data_box = find_box(clip_bytes, 0, len(clip_bytes), "mdat")
 
@@ -279,7 +342,7 @@ def extract_sei_samples(clip_bytes: bytes) -> list[SeiSample]:
 
         cursor += nal_size
 
-    return samples
+    return samples, int(round(elapsed_ms))
 
 
 def extract_frame_durations_ms(clip_bytes: bytes) -> list[float]:
