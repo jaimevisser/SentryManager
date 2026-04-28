@@ -12,5 +12,4 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ${TESLACAM_PATH:-./data/TeslaCam}:/data/TeslaCam
-      - ./data/Previews:/data/Previews
     restart: unless-stopped

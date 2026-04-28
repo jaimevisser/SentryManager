@@ -91,7 +91,6 @@ The Compose file mounts these host folders into the container:
 
 - `./config` to `/app/config`
 - `./data/TeslaCam` to `/data/TeslaCam`
-- `./data/Previews` to `/data/Previews`
 
 `/data/TeslaCam` must be writable by the container so the app can store segment-level `-telemetry.sei.bin` files plus a `sentrymanager.json` processing marker inside event folders.
 
@@ -120,8 +119,6 @@ docker compose down
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
-
-`/data/Previews` is also mounted for prerendered full-camera previews.
 
 ## Configuration
 
