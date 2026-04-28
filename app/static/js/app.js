@@ -386,6 +386,9 @@ function initEventPlayer() {
     const totalTimeNode = document.querySelector("[data-player-total-time]");
     const speedNode = document.querySelector("[data-player-speed]");
     const blinkerLeftNode = document.querySelector("[data-player-blinker-left]");
+    const headingIndicatorNode = document.querySelector("[data-player-heading-indicator]");
+    const headingNode = document.querySelector("[data-player-heading]");
+    const headingLabelNode = document.querySelector("[data-player-heading-label]");
     const autopilotNode = document.querySelector("[data-player-autopilot]");
     const brakeNode = document.querySelector("[data-player-brake]");
     const blinkerRightNode = document.querySelector("[data-player-blinker-right]");
@@ -755,8 +758,46 @@ function initEventPlayer() {
             autopilotState: telemetry.autopilotState[sampleIndex],
             speedCmps: telemetry.speedCmps[sampleIndex],
             steeringTenthsDeg: telemetry.steeringTenthsDeg[sampleIndex],
+            headingCdeg: telemetry.headingCdeg[sampleIndex],
             flags: telemetry.flags[sampleIndex],
         };
+    }
+
+    function syncHeadingUI(eventTime) {
+        if (!headingNode || !headingIndicatorNode || !headingLabelNode) {
+            return;
+        }
+
+        const sample = getTelemetrySampleAtEventTime(eventTime);
+        if (!sample || (sample.presenceBits & HEADING_PRESENT_MASK) === 0) {
+            headingIndicatorNode.hidden = true;
+            headingNode.hidden = true;
+            headingLabelNode.hidden = true;
+            headingLabelNode.textContent = "";
+            headingNode.style.transform = "rotate(0deg)";
+            return;
+        }
+
+        const headingDeg = sample.headingCdeg / 100;
+        headingIndicatorNode.hidden = false;
+        headingNode.hidden = false;
+        headingLabelNode.hidden = false;
+        headingLabelNode.textContent = getCompassDirectionLabel(headingDeg);
+        headingNode.style.transform = `rotate(${headingDeg}deg)`;
+    }
+
+    function getCompassDirectionLabel(headingDeg) {
+        const normalizedHeading = ((headingDeg % 360) + 360) % 360;
+        if (normalizedHeading >= 45 && normalizedHeading < 135) {
+            return "E";
+        }
+        if (normalizedHeading >= 135 && normalizedHeading < 225) {
+            return "S";
+        }
+        if (normalizedHeading >= 225 && normalizedHeading < 315) {
+            return "W";
+        }
+        return "N";
     }
 
     function syncAutopilotUI(eventTime) {
@@ -899,6 +940,7 @@ function initEventPlayer() {
             }
         }
         syncBlinkerUI(eventTime);
+        syncHeadingUI(eventTime);
         syncAutopilotUI(eventTime);
         syncSpeedUI(eventTime);
         syncBrakeUI(eventTime);
@@ -1442,6 +1484,7 @@ const BLINKER_LEFT_PRESENT_MASK = 1 << 6;
 const BLINKER_RIGHT_PRESENT_MASK = 1 << 7;
 const BRAKE_PRESENT_MASK = 1 << 8;
 const AUTOPILOT_PRESENT_MASK = 1 << 9;
+const HEADING_PRESENT_MASK = 1 << 12;
 const AUTOPILOT_NONE_STATE = 0;
 const BLINKER_LEFT_FLAG_MASK = 0x01;
 const BLINKER_RIGHT_FLAG_MASK = 0x02;

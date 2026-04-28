@@ -129,13 +129,22 @@
                                      hidden>
                             </div>
                             <div class="player-safe-zone-cell" aria-hidden="true">
+                                <span class="player-heading-indicator" data-player-heading-indicator hidden>
+                                    <img class="player-safe-zone-icon player-safe-zone-icon-heading"
+                                         data-player-heading
+                                         src="{{ url_for('static', filename='mdi/navigation.svg') }}"
+                                         alt=""
+                                         hidden>
+                                    <span class="player-heading-indicator-label" data-player-heading-label hidden></span>
+                                </span>
+                            </div>
+                            <div class="player-safe-zone-cell" aria-hidden="true">
                                 <img class="player-safe-zone-icon player-safe-zone-icon-emphasis"
                                      data-player-brake
                                      src="{{ url_for('static', filename='mdi/brake.svg') }}"
                                      alt=""
                                      hidden>
                             </div>
-                            <div class="player-safe-zone-cell" aria-hidden="true"></div>
                         </div>
                     </div>
                     <div class="player-safe-zone player-safe-zone-right" data-player-safe-zone="right" hidden>
