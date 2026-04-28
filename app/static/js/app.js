@@ -624,7 +624,7 @@ function initEventPlayer() {
     }
 
     if (scrubber) {
-        const previewScrubTime = () => {
+        const updateScrubTime = () => {
             if (!playlistReady) {
                 return;
             }
@@ -652,7 +652,7 @@ function initEventPlayer() {
             isScrubbing = true;
         });
 
-        scrubber.addEventListener("input", previewScrubTime);
+        scrubber.addEventListener("input", updateScrubTime);
         scrubber.addEventListener("change", () => {
             if (isScrubbing) {
                 return;

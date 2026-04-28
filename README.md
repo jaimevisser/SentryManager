@@ -4,14 +4,14 @@ SentryManager is a web application for reviewing Tesla dashcam and Sentry Mode f
 
 The current UI is desktop-only for now. Narrow-screen and mobile layouts are not supported yet.
 
-The project is designed around a Python backend that serves Jinja-rendered HTML plus static JavaScript and CSS. The browser handles review and editing workflows, while heavier media work such as indexing, proxy generation, and final render orchestration will happen on the backend with tools such as `ffprobe` and `ffmpeg`.
+The project is designed around a Python backend that serves Jinja-rendered HTML plus static JavaScript and CSS. The browser handles review and editing workflows directly against the original event clips, while heavier media work such as indexing and final render orchestration will happen on the backend with tools such as `ffprobe` and `ffmpeg`.
 
 ## Goals
 
 - Review TeslaCam events as a unified timeline instead of browsing loose clip fragments.
 - Scrub through synchronized multi-angle footage in the browser.
 - Mark ranges on the master event timeline and choose which camera view or layout should appear for each range.
-- Export the final cut from the original footage, not from browser playback proxies.
+- Export the final cut from the original footage.
 - Run cleanly inside a Docker-based stack with a mounted TeslaCam volume available to the container.
 
 ## Current Scope
@@ -27,7 +27,6 @@ This initial scaffold provides:
 It does not yet provide:
 
 - Persistent clip indexing.
-- Proxy generation.
 - Timeline editing.
 - Final export jobs.
 - Authentication or multi-user support.
@@ -53,9 +52,9 @@ The intended workflow is:
 
 1. Scan TeslaCam footage from a mounted volume.
 2. Group short source clips into events and camera-angle timelines.
-3. Generate lower-resolution proxy videos per angle per event for responsive review.
+3. Review synchronized source clips directly in the browser.
 4. Let the user create edit decisions against the master event timeline.
-5. Translate those edit decisions back onto original clips for final `ffmpeg` export.
+5. Translate those edit decisions onto original clips for final `ffmpeg` export.
 
 ## Repository Layout
 
@@ -114,8 +113,6 @@ docker compose down
 
 - `APP_ENV`: Logical environment name for the app. Defaults to `development`.
 - `TESLACAM_ROOT`: In-container path to the TeslaCam footage root. Defaults to `/data/TeslaCam`.
-- `PREVIEWS_ROOT`: In-container path to generated previews. Defaults to `/data/Previews`.
-- `MAX_PREVIEWS_FOLDER_SIZE_GB`: Fallback limit for the previews folder. Defaults to `100`.
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
@@ -128,15 +125,13 @@ Tracked defaults live in `config/general/config.example.yaml`:
 
 ```yaml
 app_env: development
-storage:
-	max_previews_folder_size_gb: 100
 ```
 
 For local or test-specific overrides, create `config/general/config.yaml`. It is ignored by git and layered on top of the example config at runtime.
 
 The current config surface includes:
 
-- maximum previews folder size in GB
+- app environment selection
 
 Path settings stay in environment variables and Compose mounts rather than the YAML config.
 
@@ -152,8 +147,7 @@ The starter page performs only a shallow summary so the app can boot against rea
 
 - Keep the browser experience server-rendered unless a specific interaction benefits from client-side enhancement.
 - Treat footage on disk as the source of truth.
-- Store edit decisions against a normalized event timeline so proxy playback and final export remain aligned.
-- Use proxies only for review. Final output should always render from original clips.
+- Store edit decisions against a normalized event timeline so playback and final export remain aligned.
 
 ## Validation Commands
 

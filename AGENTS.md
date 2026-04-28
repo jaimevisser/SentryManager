@@ -24,7 +24,7 @@
 - For Python or template changes, prefer the narrowest useful validation first.
 - For visual app HTML/CSS/template changes, always run `docker compose up -d --build app` before handing work back so the user can review the live result.
 - Baseline: `python -m compileall app`, `docker compose config`, `docker build -t sentrymanager .`
-- Add targeted automated tests as ingest, proxy, and export code lands.
+- Add targeted automated tests as ingest, editing, and export code lands.
 
 ## Housekeeping
 

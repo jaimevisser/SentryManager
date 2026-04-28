@@ -44,15 +44,11 @@ def _merge_config(base: dict[str, Any], override: dict[str, Any]) -> dict[str, A
 class AppSettings:
     env: str
     teslacam_root: str
-    previews_root: str
-    max_previews_folder_size_gb: int
 
     def as_flask_config(self) -> dict[str, Any]:
         return {
             "APP_ENV": self.env,
             "TESLACAM_ROOT": self.teslacam_root,
-            "PREVIEWS_ROOT": self.previews_root,
-            "MAX_PREVIEWS_FOLDER_SIZE_GB": self.max_previews_folder_size_gb,
         }
 
 
@@ -64,17 +60,9 @@ def load_settings() -> AppSettings:
         _load_yaml(general_dir / "config.yaml"),
     )
 
-    storage_cfg = general_cfg.get("storage") if isinstance(general_cfg, dict) else None
-    storage_cfg = storage_cfg if isinstance(storage_cfg, dict) else {}
-
     return AppSettings(
         env=str(_cfg_value(general_cfg, "app_env", "APP_ENV", "development")),
         teslacam_root=str(os.getenv("TESLACAM_ROOT", "/data/TeslaCam")),
-        previews_root=str(os.getenv("PREVIEWS_ROOT", "/data/Previews")),
-        max_previews_folder_size_gb=max(
-            1,
-            int(_cfg_value(storage_cfg, "max_previews_folder_size_gb", "MAX_PREVIEWS_FOLDER_SIZE_GB", 100)),
-        ),
     )
 
 

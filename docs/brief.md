@@ -18,17 +18,15 @@ The user wants to review a TeslaCam event without manually opening dozens of sho
 
 1. Mount or point the app at a TeslaCam footage directory.
 2. Discover footage and group it into event timelines.
-3. Build per-angle proxy videos for fast review.
-4. Open one event and scrub through synchronized footage.
-5. Mark timeline ranges and choose the camera view for each range.
-6. Export the result as one rendered video from the original clips.
+3. Open one event and scrub through synchronized footage.
+4. Mark timeline ranges and choose the camera view for each range.
+5. Export the result as one rendered video from the original clips.
 
 ## Product Principles
 
 - Optimize for review speed over media-player completeness.
 - Abstract away the many short source fragments into one event timeline.
 - Keep timeline decisions deterministic so export output matches what the user selected.
-- Treat proxies as disposable editing assets and original clips as canonical source media.
 - Degrade gracefully when footage is missing for one or more angles.
 
 ## Early UI Shape

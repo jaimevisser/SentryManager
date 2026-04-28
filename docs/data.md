@@ -39,37 +39,6 @@ Suggested fields:
 - `clip_count`
 - `status`
 
-## Proxy Asset
-
-A proxy asset is a low-resolution review video generated from raw clips for one camera angle within one event.
-
-Suggested fields:
-
-- `id`
-- `event_id`
-- `camera`
-- `file_path`
-- `codec`
-- `width`
-- `height`
-- `fps`
-- `duration_seconds`
-- `generated_at`
-- `timeline_map_path`
-
-## Proxy Timeline Map
-
-The proxy timeline map links proxy playback positions back to source clips.
-
-Each row should capture:
-
-- `proxy_start_time`
-- `proxy_end_time`
-- `source_clip_id`
-- `source_start_offset`
-- `source_end_offset`
-- `camera`
-
 ## Edit Segment
 
 An edit segment is a user-authored decision over the master event timeline.
