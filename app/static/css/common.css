@@ -1,3 +1,11 @@
+@font-face {
+    font-family: "Tektur";
+    src: url("../fonts/tektur-latin.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+}
+
 :root {
     --bg: #1d1d1d;
     --bg-soft: #1d1d1d;
@@ -23,7 +31,7 @@ html {
 body {
     margin: 0;
     min-height: 100vh;
-    font-family: "Space Grotesk", "Helvetica Neue", sans-serif;
+    font-family: "Tektur", "Helvetica Neue", sans-serif;
     color: var(--text);
     background: #1d1d1d;
 }
@@ -44,11 +52,11 @@ a {
     top: 0;
     z-index: 10;
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     gap: 1rem;
     padding: 1.25rem 5vw;
-    background: rgba(6, 17, 26, 0.72);
+    background: rgba(18, 18, 18, 0.9);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -60,14 +68,6 @@ a {
     text-decoration: none;
     font-weight: 700;
     letter-spacing: 0.02em;
-}
-
-.brand-mark {
-    width: 0.95rem;
-    height: 0.95rem;
-    border-radius: 0.24rem;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--cool) 100%);
-    box-shadow: 0 0 0 6px rgba(255, 138, 61, 0.08);
 }
 
 .page-shell.index-shell {
@@ -121,11 +121,6 @@ a {
 .page-shell.index-shell > :not(.index-eye-bg) {
     position: relative;
     z-index: 1;
-}
-
-.header-copy {
-    color: var(--muted);
-    font-size: 0.95rem;
 }
 
 @media (max-width: 720px) {

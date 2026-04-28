@@ -7,20 +7,13 @@
         <meta name="description"
               content="{{ page_description or 'Review Tesla dashcam and Sentry footage, choose camera angles on a timeline, and export a single polished video.' }}">
           <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/favicon.svg') }}">
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="{{ url_for('static', filename='css/common.css') }}">
         {% block extra_head %}{% endblock %}
     </head>
     <body>
         <div class="page-glow" aria-hidden="true"></div>
         <header class="site-header">
-            <a class="brand" href="/">
-                <span class="brand-mark" aria-hidden="true"></span>
-                <span>SentryManager</span>
-            </a>
-            <div class="header-copy">TeslaCam review and export tooling</div>
+            <a class="brand" href="/">SentryManager</a>
         </header>
         <main class="page-shell{% if page_shell_class %} {{ page_shell_class }}{% endif %}">
             {% block content %}{% endblock %}
