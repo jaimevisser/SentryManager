@@ -398,6 +398,10 @@ function initEventPlayer() {
     const cameraButtons = Array.from(document.querySelectorAll("[data-camera-target]"));
     const stageSurface = document.querySelector("[data-player-stage-surface]");
     const viewFrame = document.querySelector("[data-player-view-frame]");
+    const stageSafeZones = {
+        left: document.querySelector('[data-player-safe-zone="left"]'),
+        right: document.querySelector('[data-player-safe-zone="right"]'),
+    };
     const secondaryPlayers = {
         left: document.querySelector('[data-secondary-slot="left"]'),
         right: document.querySelector('[data-secondary-slot="right"]'),
@@ -414,6 +418,7 @@ function initEventPlayer() {
     let activeLoadToken = 0;
     let lastPointerCommitAt = 0;
     let initialSeekApplied = false;
+    let stageSafeZoneUpdatePending = false;
 
     const durationCache = new Map();
     const telemetryCache = new Map();
@@ -467,6 +472,202 @@ function initEventPlayer() {
             }
         }
         return visibleCameraKeys;
+    }
+
+    function getVideoAspectRatio(videoElement) {
+        if (!videoElement) {
+            return null;
+        }
+        if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+            return videoElement.videoWidth / videoElement.videoHeight;
+        }
+        return null;
+    }
+
+    function getContainedVideoRect(containerRect, aspectRatio) {
+        if (!containerRect || !(containerRect.width > 0) || !(containerRect.height > 0) || !(aspectRatio > 0)) {
+            return null;
+        }
+
+        const containerAspectRatio = containerRect.width / containerRect.height;
+        if (containerAspectRatio > aspectRatio) {
+            const height = containerRect.height;
+            const width = height * aspectRatio;
+            const left = containerRect.left + ((containerRect.width - width) / 2);
+            return {
+                left,
+                top: containerRect.top,
+                right: left + width,
+                bottom: containerRect.top + height,
+            };
+        }
+
+        const width = containerRect.width;
+        const height = width / aspectRatio;
+        const top = containerRect.top + ((containerRect.height - height) / 2);
+        return {
+            left: containerRect.left,
+            top,
+            right: containerRect.left + width,
+            bottom: top + height,
+        };
+    }
+
+    function getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, side) {
+        const breakpoints = new Set([0, frameHeight]);
+        for (const rect of contentRects) {
+            breakpoints.add(Math.max(0, Math.min(frameHeight, rect.top)));
+            breakpoints.add(Math.max(0, Math.min(frameHeight, rect.bottom)));
+        }
+
+        let bestRect = { width: 0, height: 0 };
+        let bestArea = 0;
+
+        for (const top of Array.from(breakpoints).sort((left, right) => left - right)) {
+            let availableWidth = frameWidth;
+            for (const rect of contentRects) {
+                if (rect.bottom <= top || rect.top >= frameHeight) {
+                    continue;
+                }
+                if (side === "left") {
+                    availableWidth = Math.min(availableWidth, rect.left);
+                } else {
+                    availableWidth = Math.min(availableWidth, frameWidth - rect.right);
+                }
+            }
+
+            const height = frameHeight - top;
+            const width = Math.max(0, availableWidth);
+            const area = width * height;
+            if (area > bestArea) {
+                bestArea = area;
+                bestRect = { width, height };
+            }
+        }
+
+        return bestRect;
+    }
+
+    function applyStageSafeZone(node, rect) {
+        if (!node || !rect || rect.width < 1 || rect.height < 1) {
+            if (node) {
+                node.hidden = true;
+                node.style.width = "0px";
+                node.style.height = "0px";
+                node.style.setProperty("--player-safe-zone-width", "0px");
+                node.style.setProperty("--player-safe-zone-height", "0px");
+            }
+            return;
+        }
+
+        node.hidden = false;
+        node.style.width = `${rect.width}px`;
+        node.style.height = `${rect.height}px`;
+        node.style.setProperty("--player-safe-zone-width", `${rect.width}px`);
+        node.style.setProperty("--player-safe-zone-height", `${rect.height}px`);
+    }
+
+    function updateStageSafeZones() {
+        if (!viewFrame || !stageSafeZones.left || !stageSafeZones.right) {
+            return;
+        }
+
+        const masterAspectRatio = getVideoAspectRatio(player);
+        const leftAspectRatio = getVideoAspectRatio(secondaryPlayers.left) || masterAspectRatio;
+        const rightAspectRatio = getVideoAspectRatio(secondaryPlayers.right) || masterAspectRatio;
+        if (!(masterAspectRatio > 0)) {
+            applyStageSafeZone(stageSafeZones.left, null);
+            applyStageSafeZone(stageSafeZones.right, null);
+            return;
+        }
+
+        const frameWidth = viewFrame.clientWidth;
+        const frameHeight = viewFrame.clientHeight;
+        if (!(frameWidth > 0) || !(frameHeight > 0)) {
+            applyStageSafeZone(stageSafeZones.left, null);
+            applyStageSafeZone(stageSafeZones.right, null);
+            return;
+        }
+
+        const frameStyles = getComputedStyle(viewFrame);
+        const leftPadding = Number.parseFloat(frameStyles.paddingLeft) || 0;
+        const rightPadding = Number.parseFloat(frameStyles.paddingRight) || 0;
+        const columnGap = Number.parseFloat(frameStyles.columnGap) || 0;
+        const usableWidth = Math.max(0, frameWidth - leftPadding - rightPadding);
+        if (!(usableWidth > 0)) {
+            applyStageSafeZone(stageSafeZones.left, null);
+            applyStageSafeZone(stageSafeZones.right, null);
+            return;
+        }
+
+        const contentRects = [];
+        const pushContainedRect = (containerRect, aspectRatio) => {
+            const contentRect = getContainedVideoRect(containerRect, aspectRatio);
+            if (contentRect) {
+                contentRects.push(contentRect);
+            }
+        };
+
+        pushContainedRect({
+            left: leftPadding,
+            top: 0,
+            width: usableWidth,
+            height: frameHeight,
+        }, masterAspectRatio);
+
+        const doubleShellWidth = Math.max(0, (usableWidth - columnGap) / 2);
+        pushContainedRect({
+            left: leftPadding,
+            top: 0,
+            width: doubleShellWidth,
+            height: frameHeight,
+        }, leftAspectRatio);
+        pushContainedRect({
+            left: leftPadding + doubleShellWidth + columnGap,
+            top: 0,
+            width: doubleShellWidth,
+            height: frameHeight,
+        }, masterAspectRatio);
+
+        const tripleMainHeight = frameHeight * (2 / 3);
+        const tripleBottomHeight = frameHeight - tripleMainHeight;
+        const tripleBottomShellWidth = Math.min(usableWidth / 2, tripleBottomHeight * (16 / 9));
+        const tripleCenterX = leftPadding + (usableWidth / 2);
+
+        pushContainedRect({
+            left: leftPadding,
+            top: 0,
+            width: usableWidth,
+            height: tripleMainHeight,
+        }, masterAspectRatio);
+        pushContainedRect({
+            left: tripleCenterX - tripleBottomShellWidth,
+            top: tripleMainHeight,
+            width: tripleBottomShellWidth,
+            height: tripleBottomHeight,
+        }, leftAspectRatio);
+        pushContainedRect({
+            left: tripleCenterX,
+            top: tripleMainHeight,
+            width: tripleBottomShellWidth,
+            height: tripleBottomHeight,
+        }, rightAspectRatio);
+
+        const leftRect = getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, "left");
+        const rightRect = getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, "right");
+        applyStageSafeZone(stageSafeZones.left, leftRect);
+        applyStageSafeZone(stageSafeZones.right, rightRect);
+    }
+
+    function scheduleStageSafeZoneUpdate() {
+        if (stageSafeZoneUpdatePending) {
+            return;
+        }
+        stageSafeZoneUpdatePending = true;
+        window.requestAnimationFrame(() => {
+            stageSafeZoneUpdatePending = false;
+            updateStageSafeZones();
+        });
     }
 
     function formatClockTime(totalSeconds) {
@@ -990,6 +1191,7 @@ function initEventPlayer() {
     player.addEventListener("loadedmetadata", () => {
         applyPendingPlayback(player);
         syncTimelineUI();
+        scheduleStageSafeZoneUpdate();
     });
 
     player.addEventListener("timeupdate", () => {
@@ -1012,7 +1214,17 @@ function initEventPlayer() {
 
         secondaryPlayer.addEventListener("loadedmetadata", () => {
             applyPendingPlayback(secondaryPlayer);
+            scheduleStageSafeZoneUpdate();
         });
+    }
+
+    if (typeof ResizeObserver === "function" && viewFrame) {
+        const stageResizeObserver = new ResizeObserver(() => {
+            scheduleStageSafeZoneUpdate();
+        });
+        stageResizeObserver.observe(viewFrame);
+    } else {
+        window.addEventListener("resize", scheduleStageSafeZoneUpdate);
     }
 
     if (toggleButton) {
@@ -1217,6 +1429,7 @@ function initEventPlayer() {
     });
 
     syncTimelineUI();
+    scheduleStageSafeZoneUpdate();
 }
 
 const TELEMETRY_MAGIC = "SEI1";

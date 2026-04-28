@@ -39,7 +39,9 @@
                                                 <span class="photo-chip photo-time">{{ event.time_label }}</span>
                                             </div>
                                             {% if event.location_label %}
-                                                <div class="photo-chip photo-location">{{ event.location_label }}</div>
+                                                <div class="photo-chip photo-location">
+                                                    <span class="photo-location-label">{{ event.location_label }}</span>
+                                                </div>
                                             {% endif %}
                                         </div>
                                     </div>

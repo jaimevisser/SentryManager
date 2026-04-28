@@ -119,6 +119,50 @@
                                 aria-hidden="true">
                        </button>
                     </div>
+                    <div class="player-safe-zone player-safe-zone-left" data-player-safe-zone="left" hidden>
+                        <div class="player-safe-zone-stack">
+                            <div class="player-safe-zone-cell" aria-hidden="true">
+                                <img class="player-safe-zone-icon"
+                                     data-player-blinker-left
+                                     src="{{ url_for('static', filename='mdi/indicator-left.svg') }}"
+                                     alt=""
+                                     hidden>
+                            </div>
+                            <div class="player-safe-zone-cell" aria-hidden="true">
+                                <img class="player-safe-zone-icon player-safe-zone-icon-emphasis"
+                                     data-player-brake
+                                     src="{{ url_for('static', filename='mdi/brake.svg') }}"
+                                     alt=""
+                                     hidden>
+                            </div>
+                            <div class="player-safe-zone-cell" aria-hidden="true"></div>
+                        </div>
+                    </div>
+                    <div class="player-safe-zone player-safe-zone-right" data-player-safe-zone="right" hidden>
+                        <div class="player-safe-zone-stack">
+                            <div class="player-safe-zone-cell" aria-hidden="true">
+                                <img class="player-safe-zone-icon"
+                                     data-player-blinker-right
+                                     src="{{ url_for('static', filename='mdi/indicator-right.svg') }}"
+                                     alt=""
+                                     hidden>
+                            </div>
+                            <div class="player-safe-zone-cell" aria-hidden="true">
+                                <img class="player-safe-zone-icon player-safe-zone-icon-autopilot"
+                                     data-player-autopilot
+                                     data-inactive-src="{{ url_for('static', filename='mdi/steering-white.svg') }}"
+                                     data-active-src="{{ url_for('static', filename='mdi/steering-blue.svg') }}"
+                                     src="{{ url_for('static', filename='mdi/steering-white.svg') }}"
+                                     alt=""
+                                     {% if not (event_has_autopilot_activity or event_has_steering_angle_data) %}hidden{% endif %}>
+                            </div>
+                            <div class="player-safe-zone-cell">
+                                <span class="player-safe-zone-text"
+                                      data-player-fsd-percent
+                                      {% if event_fsd_on_percent is none %}hidden{% endif %}>FSD {{ event_fsd_on_percent|round|int if event_fsd_on_percent is not none else '' }}%</span>
+                            </div>
+                        </div>
+                    </div>
                     <div class="player-video-shell player-video-shell-main">
                         <video class="event-player-video" data-event-player preload="metadata" playsinline muted>
                             <source src="{{ playlist_payload[default_view_key][0].url }}" type="video/mp4">
@@ -138,45 +182,6 @@
                                playsinline
                                muted></video>
                     </div>
-                </div>
-                <div class="player-status-bar" data-player-status-bar>
-                    <div class="player-status-spacer" aria-hidden="true"></div>
-                    <div class="player-status-item">
-                        <span class="player-status-icon-slot" aria-hidden="true">
-                            <img class="player-status-icon"
-                                 data-player-blinker-left
-                                 src="{{ url_for('static', filename='mdi/indicator-left.svg') }}"
-                                 alt=""
-                                 hidden>
-                        </span>
-                        <span class="player-status-icon-slot" aria-hidden="true">
-                            <img class="player-status-icon player-status-icon-autopilot"
-                                 data-player-autopilot
-                                 data-inactive-src="{{ url_for('static', filename='mdi/steering-white.svg') }}"
-                                 data-active-src="{{ url_for('static', filename='mdi/steering-blue.svg') }}"
-                                 src="{{ url_for('static', filename='mdi/steering-white.svg') }}"
-                                 alt=""
-                                 {% if not (event_has_autopilot_activity or event_has_steering_angle_data) %}hidden{% endif %}>
-                        </span>
-                        <span class="player-status-value" data-player-speed></span>
-                        <span class="player-status-icon-slot" aria-hidden="true">
-                            <img class="player-status-icon player-status-icon-emphasis"
-                                 data-player-brake
-                                 src="{{ url_for('static', filename='mdi/brake.svg') }}"
-                                 alt=""
-                                 hidden>
-                        </span>
-                        <span class="player-status-icon-slot" aria-hidden="true">
-                            <img class="player-status-icon"
-                                 data-player-blinker-right
-                                 src="{{ url_for('static', filename='mdi/indicator-right.svg') }}"
-                                 alt=""
-                                 hidden>
-                        </span>
-                    </div>
-                    <div class="player-status-summary"
-                         data-player-fsd-percent
-                         {% if event_fsd_on_percent is none %}hidden{% endif %}>FSD {{ event_fsd_on_percent|round|int if event_fsd_on_percent is not none else '' }}%</div>
                 </div>
             </div>
             <div class="player-controls" data-player-controls>
