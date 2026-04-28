@@ -28,11 +28,11 @@
                                         {% endif %}
                                         <div class="photo-overlay">
                                             <div class="photo-topline">
-                                                <span class="pill pill-soft">{{ event.category }}</span>
-                                                <span class="photo-time">{{ event.time_label }}</span>
+                                                <span class="photo-chip">{{ event.category_label }}</span>
+                                                <span class="photo-chip photo-time">{{ event.time_label }}</span>
                                             </div>
                                             {% if event.location_label %}
-                                                <div class="photo-location">{{ event.location_label }}</div>
+                                                <div class="photo-chip photo-location">{{ event.location_label }}</div>
                                             {% endif %}
                                         </div>
                                     </div>

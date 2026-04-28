@@ -108,6 +108,39 @@ def get_event_processing_marker_path(event_dir: Path) -> Path:
     return event_dir / PROCESSING_MARKER_NAME
 
 
+def load_event_json_payload(event_dir: Path) -> dict[str, object] | None:
+    event_file = event_dir / "event.json"
+    if not event_file.is_file():
+        return None
+
+    try:
+        payload = json.loads(event_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    return payload
+
+
+def extract_event_category_label(payload: dict[str, object] | None) -> str | None:
+    if payload is None:
+        return None
+
+    reason = payload.get("reason")
+    if not isinstance(reason, str):
+        return None
+
+    normalized_reason = reason.strip().lower()
+    if not normalized_reason:
+        return None
+
+    if normalized_reason.startswith("sentry_"):
+        return "Sentry"
+    return "Saved"
+
+
 def ensure_sei_sidecars(clip_files: list[Path]) -> None:
     segments: dict[tuple[Path, str], dict[str, Path]] = {}
     event_autopilot_activity: dict[Path, bool] = {}
@@ -174,10 +207,13 @@ def ensure_segment_sei_sidecar(event_dir: Path, segment_key: str, camera_files: 
 
 def ensure_event_processing_marker(event_dir: Path, has_autopilot_activity: bool, has_steering_angle_data: bool) -> Path:
     marker_path = get_event_processing_marker_path(event_dir)
+    event_payload = load_event_json_payload(event_dir)
+    event_category_label = extract_event_category_label(event_payload)
     marker_payload = json.dumps(
         {
             "hasAutopilotActivity": has_autopilot_activity,
             "hasSteeringAngleData": has_steering_angle_data,
+            "eventCategoryLabel": event_category_label,
         },
         separators=(",", ":"),
     )

@@ -45,6 +45,7 @@ class EventSummary:
     name: str
     path: str
     category: str
+    category_label: str
     clip_count: int
     cameras: list[str]
     timestamp: datetime | None
@@ -244,6 +245,7 @@ def build_event_summary_cache_key(
                 str(event_dir.relative_to(footage_root) if event_dir != footage_root else Path(".")),
                 get_path_mtime_ns(event_dir),
                 get_path_mtime_ns(event_dir / "event.json"),
+                get_path_mtime_ns(event_dir / "sentrymanager.json"),
                 get_path_mtime_ns(event_dir / "thumb.png"),
             )
             for event_dir in event_directories
@@ -282,12 +284,15 @@ def summarize_event_dir(
     category = relative_path.parts[0] if len(relative_path.parts) > 1 else "TeslaCam"
     thumbnail_file = event_dir / "thumb.png"
     event_payload = load_event_json_payload(event_dir)
+    event_processing_state = load_event_processing_state(event_dir)
+    category_label = load_event_category_label(event_processing_state, event_payload, category)
     location_label = extract_event_location_label(event_payload)
     trigger_offset_seconds = extract_event_trigger_offset_seconds(event_payload, first_segment_timestamp)
     return EventSummary(
         name=event_dir.name if event_dir != footage_root else footage_root.name,
         path=str(relative_path),
         category=category,
+        category_label=category_label,
         clip_count=len(clip_files),
         cameras=cameras,
         timestamp=timestamp,
@@ -426,6 +431,47 @@ def extract_event_location_label(payload: dict[str, object] | None) -> str | Non
     if not location_parts:
         return None
     return ", ".join(location_parts)
+
+
+def extract_event_category_label(payload: dict[str, object] | None) -> str | None:
+    if payload is None:
+        return None
+
+    reason = payload.get("reason")
+    if not isinstance(reason, str):
+        return None
+
+    normalized_reason = reason.strip().lower()
+    if not normalized_reason:
+        return None
+
+    if normalized_reason.startswith("sentry_"):
+        return "Sentry"
+    return "Saved"
+
+
+def fallback_event_category_label(category: str) -> str:
+    if category == "SentryClips":
+        return "Sentry"
+    if category == "SavedClips":
+        return "Saved"
+    return category
+
+
+def load_event_category_label(
+    processing_state: dict[str, object],
+    event_payload: dict[str, object] | None,
+    category: str,
+) -> str:
+    marker_label = processing_state.get("eventCategoryLabel")
+    if isinstance(marker_label, str) and marker_label.strip():
+        return marker_label.strip()
+
+    payload_label = extract_event_category_label(event_payload)
+    if payload_label is not None:
+        return payload_label
+
+    return fallback_event_category_label(category)
 
 
 def extract_event_trigger_offset_seconds(
