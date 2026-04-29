@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% set page_shell_class = "index-shell" %}
 
+{% block extra_head %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+{% endblock %}
+
 {% block content %}
     <div class="index-eye-bg" aria-hidden="true">
         <div class="index-eye-asset">

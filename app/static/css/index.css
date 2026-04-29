@@ -1,0 +1,232 @@
+.page-shell.index-shell {
+    position: relative;
+    isolation: isolate;
+    --index-eye-line-width: calc(var(--index-eye-size) * 0.025);
+}
+
+.page-shell.index-shell .index-eye-bg {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 33.333vw;
+    min-width: 18rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.page-shell.index-shell .index-eye-asset {
+    position: relative;
+    width: var(--index-eye-size);
+    flex: 0 0 auto;
+}
+
+.page-shell.index-shell .index-eye-asset::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -100vh;
+    bottom: -100vh;
+    width: var(--index-eye-line-width);
+    background: #000000;
+    transform: translateX(-50%);
+    z-index: 0;
+}
+
+.page-shell.index-shell .index-eye-bg img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.page-shell.index-shell > :not(.index-eye-bg) {
+    position: relative;
+    z-index: 1;
+}
+
+.day-section-list {
+    display: grid;
+    gap: 2rem;
+}
+
+.day-section {
+    display: grid;
+    gap: 1rem;
+}
+
+.day-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 1rem;
+}
+
+.day-section-header h2 {
+    font-size: clamp(1.4rem, 3vw, 2.1rem);
+}
+
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-auto-flow: dense;
+    gap: 1rem;
+}
+
+.photo-card {
+    min-width: 0;
+}
+
+.photo-card-featured {
+    grid-column: span 2;
+    grid-row: span 2;
+}
+
+.photo-frame {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: 24px;
+    border: 1px solid #000000;
+    box-shadow: var(--shadow);
+    background:
+        linear-gradient(160deg, rgba(116, 208, 255, 0.16), transparent 55%),
+        linear-gradient(180deg, rgba(11, 23, 34, 0.8), rgba(6, 17, 26, 0.98));
+}
+
+.photo-card-featured .photo-frame {
+    aspect-ratio: 16 / 10;
+}
+
+.photo-link {
+    display: block;
+    text-decoration: none;
+}
+
+.photo-link:focus-visible .photo-frame,
+.photo-link:hover .photo-frame {
+    border-color: rgba(255, 117, 40, 0.45);
+    transform: translateY(-2px);
+}
+
+.photo-frame img,
+.photo-fallback {
+    width: 100%;
+    height: 100%;
+}
+
+.photo-frame img {
+    display: block;
+    object-fit: cover;
+    transform: scale(1.01);
+}
+
+.photo-frame {
+    transition: transform 160ms ease, border-color 160ms ease;
+}
+
+body[data-selection-mode="true"] .photo-link {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+body[data-selection-mode="true"] .photo-link:hover .photo-frame,
+body[data-selection-mode="true"] .photo-link:focus-visible .photo-frame {
+    transform: none;
+}
+
+.photo-card.is-selected .photo-frame {
+    border-color: rgba(255, 51, 45, 0.94);
+    box-shadow: 0 0 0 1px rgba(255, 51, 45, 0.45), var(--shadow);
+}
+
+.photo-fallback {
+    display: grid;
+    place-items: center;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.photo-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: space-between;
+    padding: 1rem;
+    background:
+        linear-gradient(180deg, rgba(4, 9, 14, 0.3) 0%, rgba(4, 9, 14, 0.08) 42%, rgba(4, 9, 14, 0.32) 100%);
+    z-index: 1;
+}
+
+.photo-selection-mark {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2;
+    background: radial-gradient(circle, rgba(4, 9, 14, 0.08) 0%, rgba(4, 9, 14, 0.02) 28%, transparent 52%);
+    transition: opacity 160ms ease;
+}
+
+.photo-frame .photo-selection-icon {
+    display: block;
+    width: clamp(2.8rem, 14%, 4rem);
+    height: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0.35rem 0.9rem rgba(0, 0, 0, 0.55));
+    transform: scale(0.92);
+    transition: transform 160ms ease;
+}
+
+.photo-card.is-selected .photo-selection-mark {
+    opacity: 1;
+}
+
+.photo-card.is-selected .photo-selection-icon {
+    transform: scale(1);
+}
+
+.photo-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 0.75rem;
+}
+
+.photo-chip {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    padding: 0.45rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(4, 9, 14, 0.58);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+    line-height: 1.2;
+    backdrop-filter: blur(10px);
+}
+
+.photo-location {
+    display: block;
+    max-width: min(100%, 28ch);
+}
+
+.photo-location-label {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

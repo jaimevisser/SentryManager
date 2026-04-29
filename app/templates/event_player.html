@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 
+{% block extra_head %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/event_player.css') }}">
+{% endblock %}
+
 {% block content %}
     <section class="player-detail-page">
         <div class="player-meta-line">
