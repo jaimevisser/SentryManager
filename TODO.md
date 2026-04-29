@@ -72,6 +72,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 
 ## Phase 6: Operational Hardening
 
+- [x] Split page-specific JavaScript so the index and player only load their own modules plus shared helpers.
+- [x] Split player-side JavaScript into entry, event, viewer-delete, and media helper modules.
 - [ ] Add structured logging for discovery, telemetry extraction, editing, and export jobs.
 - [ ] Add automated tests for discovery, playlist building, telemetry decoding, timeline normalization, and render-plan generation.
 - [ ] Add health checks and failure reporting for stack deployment.
