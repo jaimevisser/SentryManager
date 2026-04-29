@@ -200,19 +200,30 @@
                 </div>
             </div>
             <div class="player-controls" data-player-controls>
-                <button class="player-control-button"
-                        type="button"
-                        data-player-toggle
-                        aria-label="Play"
-                        data-play-icon="{{ url_for('static', filename='mdi/play.svg') }}"
-                        data-pause-icon="{{ url_for('static', filename='mdi/pause.svg') }}">
-                    <img class="player-control-icon"
-                         data-player-toggle-icon
-                         src="{{ url_for('static', filename='mdi/play.svg') }}"
-                         alt=""
-                         aria-hidden="true">
-                </button>
+                <div class="player-control-stack">
+                    <button class="player-control-button"
+                            type="button"
+                            data-player-toggle
+                            aria-label="Play"
+                            data-play-icon="{{ url_for('static', filename='mdi/play.svg') }}"
+                            data-pause-icon="{{ url_for('static', filename='mdi/pause.svg') }}">
+                        <img class="player-control-icon"
+                             data-player-toggle-icon
+                             src="{{ url_for('static', filename='mdi/play.svg') }}"
+                             alt=""
+                             aria-hidden="true">
+                    </button>
+                    <div class="player-edit-actions" aria-label="Timeline marker controls">
+                        <button class="player-edit-action" type="button" data-player-set-start>Start</button>
+                        <button class="player-edit-action" type="button" data-player-set-end>End</button>
+                        <button class="player-edit-action" type="button" data-player-add-camera-marker>Camera</button>
+                    </div>
+                </div>
                 <div class="player-scrub-group">
+                    <div class="player-time-row">
+                        <span data-player-current-time>0:00</span>
+                        <span data-player-total-time>--:--</span>
+                    </div>
                     <div class="player-scrub-track">
                         <div class="player-scrub-marker" data-player-event-marker hidden></div>
                         <input class="player-scrub-input"
@@ -224,13 +235,23 @@
                                data-player-scrub
                                aria-label="Scrub through event timeline">
                     </div>
-                    <div class="player-time-row">
-                        <span data-player-current-time>0:00</span>
-                        <span data-player-total-time>--:--</span>
+                    <div class="player-edit-track" aria-label="Edit marker lane" data-player-edit-track>
+                        <div class="player-edit-track-line" aria-hidden="true"></div>
+                        <div class="player-edit-track-fill" aria-hidden="true" data-player-edit-fill></div>
+                        <button class="player-edit-marker player-edit-marker-start"
+                                type="button"
+                                data-player-start-marker
+                                data-marker-label="S"
+                                aria-label="Start marker"></button>
+                        <button class="player-edit-marker player-edit-marker-end"
+                                type="button"
+                                data-player-end-marker
+                                data-marker-label="E"
+                                aria-label="End marker"></button>
                     </div>
                 </div>
             </div>
-            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data, 'fsdOnPercent': event_fsd_on_percent}}|tojson }}</script>
+            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data, 'fsdOnPercent': event_fsd_on_percent}, 'savedEdits': saved_player_edits, 'playerEditsSaveUrl': player_edits_save_url}|tojson }}</script>
         {% else %}
             <div class="player-empty-state">No camera clips were found for this event yet.</div>
         {% endif %}

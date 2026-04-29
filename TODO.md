@@ -52,6 +52,12 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 
 ## Phase 4: Editing Model
 
+- [x] Add start/end trim marker UX shell with draggable handles, default range fill, and minimum-gap constraints.
+- [x] Add camera marker UX with per-marker layout/camera popup controls on the edit lane.
+- [x] Apply camera marker layout/camera selections live when playback crosses each marker.
+- [x] Add start-marker layout/camera selection so playback can begin in a saved perspective before the first camera marker.
+- [x] Persist player trim and camera markers in each event's `sentrymanager.json` and hydrate them on reload.
+- [x] Open the player at the saved trim start when a persisted start marker is present.
 - [ ] Create the edit decision list structure for timeline segments.
 - [ ] Let users mark in and out points on the event timeline.
 - [ ] Let users choose one camera or a multi-camera layout per segment.

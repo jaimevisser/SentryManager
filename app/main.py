@@ -32,6 +32,8 @@ CAMERA_LABELS = {
     "unknown": "Unknown",
 }
 
+PLAYER_LAYOUT_OPTIONS = {"single", "double", "triple"}
+
 SENTRY_EVENT_CAMERA_MAP = {
     "0": "front",
     "3": "left_repeater",
@@ -149,7 +151,8 @@ def create_app() -> Flask:
         default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
         event_processing_state = load_event_processing_state(event_dir)
         event_fsd_on_percent = get_event_fsd_on_percent(event_processing_state)
-        initial_start_time = get_initial_player_start_time(event_summary)
+        saved_player_edits = get_saved_player_edits(event_processing_state)
+        initial_start_time = get_initial_player_start_time(event_summary, saved_player_edits)
         return render_template(
             "event_player.html",
             event=event_summary,
@@ -174,6 +177,8 @@ def create_app() -> Flask:
             event_fsd_on_percent=event_fsd_on_percent,
             event_marker_time=event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
             initial_start_time=initial_start_time,
+            saved_player_edits=saved_player_edits,
+            player_edits_save_url=url_for("update_event_player_edits", event_path=event_summary.path),
             page_delete_event_path=event_summary.path,
             page_delete_redirect_url=url_for("index"),
             page_title=f"{event_summary.day_label} Player | SentryManager",
@@ -230,6 +235,27 @@ def create_app() -> Flask:
 
         _EVENT_SUMMARY_CACHE.clear()
         return jsonify({"deletedPaths": deleted_paths})
+
+    @app.post("/events/<path:event_path>/player-edits")
+    def update_event_player_edits(event_path: str):
+        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
+        event_dir = (footage_root / event_path).resolve()
+        if not event_dir.is_dir() or not _is_within_root(event_dir, footage_root):
+            return jsonify({"error": "Clip folder not found."}), 404
+
+        payload = request.get_json(silent=True)
+        player_edits = normalize_saved_player_edits(payload)
+        if player_edits is None:
+            return jsonify({"error": "Invalid player edits request."}), 400
+
+        processing_state = load_event_processing_state(event_dir)
+        processing_state["playerEdits"] = player_edits
+        try:
+            write_event_processing_state(event_dir, processing_state)
+        except OSError:
+            return jsonify({"error": "Could not save player edits."}), 500
+
+        return jsonify({"playerEdits": player_edits})
 
     return app
 
@@ -586,7 +612,97 @@ def get_event_fsd_on_percent(event_processing_state: dict[str, object]) -> float
     return max(0.0, min(100.0, fsd_on_percent))
 
 
-def get_initial_player_start_time(event: EventSummary) -> float:
+def _coerce_nonnegative_number(value: object) -> float | None:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+
+    numeric_value = float(value)
+    if not math.isfinite(numeric_value):
+        return None
+
+    return max(0.0, round(numeric_value, 3))
+
+
+def normalize_player_view_selection(payload: object) -> dict[str, object] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    raw_layout = payload.get("layout")
+    raw_camera_key = payload.get("cameraKey")
+    if not isinstance(raw_layout, str) or raw_layout not in PLAYER_LAYOUT_OPTIONS:
+        return None
+    if not isinstance(raw_camera_key, str) or raw_camera_key not in CAMERA_ORDER:
+        return None
+
+    return {
+        "layout": raw_layout,
+        "cameraKey": raw_camera_key,
+    }
+
+
+def normalize_saved_player_edits(payload: object) -> dict[str, object] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    trim_start_time = _coerce_nonnegative_number(payload.get("trimStartTime"))
+    trim_end_time = _coerce_nonnegative_number(payload.get("trimEndTime"))
+    start_marker_view = normalize_player_view_selection(payload.get("startMarkerView"))
+    raw_camera_markers = payload.get("cameraMarkers")
+    if trim_start_time is None or trim_end_time is None or start_marker_view is None or not isinstance(raw_camera_markers, list):
+        return None
+
+    camera_markers: list[dict[str, object]] = []
+    seen_ids: set[int] = set()
+    for raw_marker in raw_camera_markers:
+        if not isinstance(raw_marker, dict):
+            return None
+
+        raw_marker_id = raw_marker.get("id")
+        if not isinstance(raw_marker_id, int) or isinstance(raw_marker_id, bool) or raw_marker_id < 1 or raw_marker_id in seen_ids:
+            return None
+
+        marker_time = _coerce_nonnegative_number(raw_marker.get("time"))
+        marker_view = normalize_player_view_selection(raw_marker)
+        if marker_time is None or marker_view is None:
+            return None
+
+        seen_ids.add(raw_marker_id)
+        camera_markers.append({
+            "id": raw_marker_id,
+            "time": marker_time,
+            "layout": marker_view["layout"],
+            "cameraKey": marker_view["cameraKey"],
+        })
+
+    camera_markers.sort(key=lambda marker: (float(marker["time"]), int(marker["id"])))
+    return {
+        "trimStartTime": trim_start_time,
+        "trimEndTime": trim_end_time,
+        "startMarkerView": start_marker_view,
+        "cameraMarkers": camera_markers,
+    }
+
+
+def get_saved_player_edits(event_processing_state: dict[str, object]) -> dict[str, object] | None:
+    return normalize_saved_player_edits(event_processing_state.get("playerEdits"))
+
+
+def write_event_processing_state(event_dir: Path, processing_state: dict[str, object]) -> None:
+    marker_file = get_event_processing_marker_path(event_dir)
+    marker_file.write_text(
+        json.dumps(processing_state, ensure_ascii=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+
+def get_initial_player_start_time(event: EventSummary, saved_player_edits: dict[str, object] | None = None) -> float:
+    if isinstance(saved_player_edits, dict):
+        raw_trim_start_time = saved_player_edits.get("trimStartTime")
+        if isinstance(raw_trim_start_time, int | float) and not isinstance(raw_trim_start_time, bool):
+            trim_start_time = float(raw_trim_start_time)
+            if math.isfinite(trim_start_time) and trim_start_time > 0:
+                return trim_start_time
+
     if event.category == "SentryClips" and event.trigger_offset_seconds is not None:
         return max(0.0, event.trigger_offset_seconds - 60.0)
     return 0.0

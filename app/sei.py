@@ -240,13 +240,22 @@ def ensure_event_processing_marker(
     marker_path = get_event_processing_marker_path(event_dir)
     event_payload = load_event_json_payload(event_dir)
     event_category_label = extract_event_category_label(event_payload)
-    marker_payload_value: dict[str, object] = {
-        "hasAutopilotActivity": has_autopilot_activity,
-        "hasSteeringAngleData": has_steering_angle_data,
-        "eventCategoryLabel": event_category_label,
-    }
+    marker_payload_value: dict[str, object] = {}
+    if marker_path.exists():
+        try:
+            existing_payload = json.loads(marker_path.read_text(encoding="utf-8"))
+            if isinstance(existing_payload, dict):
+                marker_payload_value = existing_payload
+        except (OSError, json.JSONDecodeError):
+            marker_payload_value = {}
+
+    marker_payload_value["hasAutopilotActivity"] = has_autopilot_activity
+    marker_payload_value["hasSteeringAngleData"] = has_steering_angle_data
+    marker_payload_value["eventCategoryLabel"] = event_category_label
     if autopilot_on_percent is not None:
         marker_payload_value["fsdOnPercent"] = autopilot_on_percent
+    else:
+        marker_payload_value.pop("fsdOnPercent", None)
     marker_payload = json.dumps(marker_payload_value, separators=(",", ":"))
     if marker_path.exists():
         try:
