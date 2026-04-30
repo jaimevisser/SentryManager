@@ -6,8 +6,9 @@
 - Compose publishes the app on host port `8765`, mounts TeslaCam footage at `/data/TeslaCam`, and the container can write segment telemetry sidecars plus `sentrymanager.json` markers back into event folders.
 - Event discovery is broader than the original scaffold note implied: the index scans direct event folders plus one- and two-level TeslaCam layouts, caches in-memory summaries, and enriches cards from `event.json`, `thumb.png`, and `sentrymanager.json`.
 - The review UI already supports grouped browsing, event thumbnails, location/category chips, trigger-aware Sentry defaults, synchronized clip progression, composite camera views, and telemetry-backed speed/blinker/autopilot indicators.
-- There is still no durable ingest store, timeline editing model, or export pipeline.
-- The best next implementation slice is durable ingest persistence: store the normalized event, clip, and telemetry model, then build editing and export on top of that.
+- The player now supports persisted trim handles, a saved start-marker view, and camera markers in each event's `sentrymanager.json`, but those edits are still stored as raw marker state rather than normalized timeline segments.
+- There is still no durable ingest store, normalized edit-segment model, or export pipeline.
+- The best next implementation slice is to normalize the saved marker state into contiguous edit segments, then persist the event, clip, coverage, and telemetry model in a local store so export can consume deterministic timeline data.
 
 This file tracks the delivery plan for SentryManager as discrete implementation steps.
 
@@ -48,6 +49,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Show event-level `fsdOnPercent` in the right stage-safe overlay during playback.
 - [x] Overlay a transparent 3x3 camera icon grid on the top-left of the main player image.
 - [x] Replace the old camera selector row with overlay-driven 1/2/3 camera layouts and camera-target arrows.
+- [ ] Add export controls to the event player for starting an export from the current edit state.
+- [ ] Surface export readiness, active-job state, and the latest output/error details in the event player UI.
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
 
 ## Phase 4: Editing Model
@@ -58,14 +61,17 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Add start-marker layout/camera selection so playback can begin in a saved perspective before the first camera marker.
 - [x] Persist player trim and camera markers in each event's `sentrymanager.json` and hydrate them on reload.
 - [x] Open the player at the saved trim start when a persisted start marker is present.
-- [ ] Create the edit decision list structure for timeline segments.
-- [ ] Let users mark in and out points on the event timeline.
-- [ ] Let users choose one camera or a multi-camera layout per segment.
-- [ ] Add editing controls for labels, notes, and optional playback-speed changes.
+- [ ] Normalize the saved trim range, start-marker view, and camera markers into contiguous edit segments.
+- [ ] Show derived segment boundaries and active-segment selection on the event timeline.
+- [ ] Let users split, merge, and retime segments without rebuilding raw marker state by hand.
+- [ ] Add per-segment editing controls for labels, notes, and optional playback-rate overrides.
 
 ## Phase 5: Export Pipeline
 
-- [ ] Convert edit decisions into an `ffmpeg` render plan.
+- [ ] Make export composition match the browser stage rendering for trims, camera switches, multi-camera layouts, and stage-safe overlays.
+- [ ] Convert normalized edit segments into an `ffmpeg` render plan.
+- [ ] Generate background-rendered telemetry corner overlay assets that can be stitched into the final export timeline.
+- [ ] Composite telemetry corner overlays with the source-camera layout render so exported video preserves the viewer telemetry treatment.
 - [ ] Render export jobs directly from original source clips.
 - [ ] Add export progress reporting and output file management.
 - [ ] Handle partial-footage edge cases without invalidating the full export.

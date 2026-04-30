@@ -604,6 +604,7 @@ export function initEventPlayer() {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "player-edit-marker player-edit-marker-camera";
+        button.dataset.markerLabel = "c";
 
         let draggedDuringPointerSequence = false;
         let pointerStartX = 0;
