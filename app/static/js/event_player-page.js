@@ -1237,10 +1237,6 @@ export function initEventPlayer() {
 
     function ensureTrimRange(totalDuration) {
         if (totalDuration <= 0) {
-            trimInitialized = false;
-            trimStartTime = 0;
-            trimEndTime = 0;
-            trimEndPinnedToDuration = true;
             return;
         }
 
