@@ -439,6 +439,33 @@ export function initEventPlayer() {
         schedulePlayerEditsPersistence();
     }
 
+    function removeCameraMarker(markerId) {
+        const markerExists = cameraMarkers.some((marker) => marker.id === markerId);
+        if (!markerExists) {
+            return;
+        }
+
+        cameraMarkers = cameraMarkers.filter((marker) => marker.id !== markerId);
+        if (activeCameraMarkerId === markerId) {
+            activeCameraMarkerId = null;
+        }
+        if (activePlaybackCameraMarkerId === markerId) {
+            activePlaybackCameraMarkerId = getLatestCameraMarkerAtOrBefore(getCurrentEventTime())?.id ?? null;
+        }
+        syncTimelineUI();
+        schedulePlayerEditsPersistence();
+    }
+
+    function isCameraMarkerPointerOutsideLane(clientY) {
+        if (!editTrack) {
+            return false;
+        }
+
+        const rect = editTrack.getBoundingClientRect();
+        const threshold = 28;
+        return clientY < rect.top - threshold || clientY > rect.bottom + threshold;
+    }
+
     function getPlaybackViewMarkers() {
         const playbackMarkers = [];
         if (trimInitialized) {
@@ -577,11 +604,10 @@ export function initEventPlayer() {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "player-edit-marker player-edit-marker-camera";
-        button.dataset.markerLabel = "C";
 
         let draggedDuringPointerSequence = false;
         let pointerStartX = 0;
-        let pointerStartTime = marker.time;
+        let pointerStartY = 0;
 
         const popover = document.createElement("div");
         popover.className = "player-edit-camera-popover";
@@ -606,8 +632,10 @@ export function initEventPlayer() {
                 return;
             }
             pointerStartX = event.clientX;
-            pointerStartTime = findCameraMarker(marker.id)?.time ?? marker.time;
+            pointerStartY = event.clientY;
             draggedDuringPointerSequence = false;
+            shell.style.setProperty("--player-marker-drag-offset-y", "0px");
+            shell.classList.remove("is-removing");
             button.setPointerCapture(event.pointerId);
         });
 
@@ -617,35 +645,58 @@ export function initEventPlayer() {
             }
 
             const deltaX = event.clientX - pointerStartX;
-            if (!draggedDuringPointerSequence && Math.abs(deltaX) < 4) {
+            const deltaY = event.clientY - pointerStartY;
+            if (!draggedDuringPointerSequence && Math.hypot(deltaX, deltaY) < 4) {
                 return;
             }
 
             draggedDuringPointerSequence = true;
             event.preventDefault();
+            shell.style.setProperty("--player-marker-drag-offset-y", `${deltaY}px`);
+            shell.classList.toggle("is-removing", isCameraMarkerPointerOutsideLane(event.clientY));
             const nextTime = getEditTrackTimeFromClientX(event.clientX);
             setCameraMarkerTime(marker.id, nextTime);
         });
 
-        const stopDragging = (event) => {
+        const finishDragging = (event) => {
             if (!button.hasPointerCapture(event.pointerId)) {
                 return;
             }
 
             button.releasePointerCapture(event.pointerId);
             const deltaX = event.clientX - pointerStartX;
-            if (Math.abs(deltaX) < 4) {
+            const deltaY = event.clientY - pointerStartY;
+            shell.style.setProperty("--player-marker-drag-offset-y", "0px");
+
+            if (Math.hypot(deltaX, deltaY) < 4) {
+                shell.classList.remove("is-removing");
                 return;
             }
 
             draggedDuringPointerSequence = true;
             event.preventDefault();
+            const shouldRemoveMarker = event.type !== "pointercancel" && isCameraMarkerPointerOutsideLane(event.clientY);
+            shell.classList.remove("is-removing");
+            if (shouldRemoveMarker) {
+                removeCameraMarker(marker.id);
+                return;
+            }
             const nextTime = getEditTrackTimeFromClientX(event.clientX);
             setCameraMarkerTime(marker.id, nextTime);
         };
 
-        button.addEventListener("pointerup", stopDragging);
-        button.addEventListener("pointercancel", stopDragging);
+        const cancelDragging = (event) => {
+            if (!button.hasPointerCapture(event.pointerId)) {
+                return;
+            }
+
+            button.releasePointerCapture(event.pointerId);
+            shell.style.setProperty("--player-marker-drag-offset-y", "0px");
+            shell.classList.remove("is-removing");
+        };
+
+        button.addEventListener("pointerup", finishDragging);
+        button.addEventListener("pointercancel", cancelDragging);
 
         popover.addEventListener("click", (event) => {
             event.stopPropagation();
@@ -726,6 +777,8 @@ export function initEventPlayer() {
             }
 
             const ratio = totalDuration > 0 ? Math.min(Math.max(marker.time / totalDuration, 0), 1) : 0;
+            node.shell.style.setProperty("--player-marker-drag-offset-y", "0px");
+            node.shell.classList.remove("is-removing");
             node.shell.style.left = `${ratio * 100}%`;
             node.button.setAttribute("aria-label", `Camera marker at ${formatClockTime(marker.time)}`);
             node.button.classList.toggle("is-open", activeCameraMarkerId === marker.id);
@@ -896,7 +949,7 @@ export function initEventPlayer() {
             updateTrimMarkerFromPointer("start", event.clientX);
         });
 
-        const stopDragging = (event) => {
+        const finishDragging = (event) => {
             if (!startMarkerButton.hasPointerCapture(event.pointerId)) {
                 return;
             }
@@ -913,8 +966,16 @@ export function initEventPlayer() {
             updateTrimMarkerFromPointer("start", event.clientX);
         };
 
-        startMarkerButton.addEventListener("pointerup", stopDragging);
-        startMarkerButton.addEventListener("pointercancel", stopDragging);
+        const cancelDragging = (event) => {
+            if (!startMarkerButton.hasPointerCapture(event.pointerId)) {
+                return;
+            }
+
+            startMarkerButton.releasePointerCapture(event.pointerId);
+        };
+
+        startMarkerButton.addEventListener("pointerup", finishDragging);
+        startMarkerButton.addEventListener("pointercancel", cancelDragging);
 
         startMarkerPopover.addEventListener("click", (event) => {
             event.stopPropagation();
@@ -1297,7 +1358,7 @@ export function initEventPlayer() {
             updateTrimMarkerFromPointer(markerType, event.clientX);
         });
 
-        const stopDragging = (event) => {
+        const finishDragging = (event) => {
             if (activeTrimMarker !== markerType) {
                 return;
             }
@@ -1309,8 +1370,18 @@ export function initEventPlayer() {
             }
         };
 
-        markerButton.addEventListener("pointerup", stopDragging);
-        markerButton.addEventListener("pointercancel", stopDragging);
+        const cancelDragging = (event) => {
+            if (activeTrimMarker !== markerType) {
+                return;
+            }
+            activeTrimMarker = null;
+            if (markerButton.hasPointerCapture(event.pointerId)) {
+                markerButton.releasePointerCapture(event.pointerId);
+            }
+        };
+
+        markerButton.addEventListener("pointerup", finishDragging);
+        markerButton.addEventListener("pointercancel", cancelDragging);
     }
 
     function formatSpeedText(speedKph) {

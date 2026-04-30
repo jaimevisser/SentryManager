@@ -584,8 +584,13 @@
     position: absolute;
     top: 0;
     left: 0;
-    transform: translateX(-50%);
+    transform: translate(-50%, var(--player-marker-drag-offset-y, 0px));
+    transition: opacity 120ms ease;
     z-index: 2;
+}
+
+.player-edit-camera-marker-shell.is-removing {
+    opacity: 0.42;
 }
 
 .player-edit-marker-camera {
