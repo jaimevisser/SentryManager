@@ -22,6 +22,7 @@
                         data-index-delete-button
                         data-delete-url="{{ url_for('delete_events') }}"
                         aria-label="Delete selected clips"
+                    title="Delete selected clips"
                         hidden>
                     <img class="header-selection-action-icon"
                          src="{{ url_for('static', filename='mdi/trash-can-outline-orange.svg') }}"
@@ -34,7 +35,8 @@
                         data-delete-url="{{ url_for('delete_events') }}"
                         data-event-path="{{ page_delete_event_path }}"
                         data-delete-redirect-url="{{ page_delete_redirect_url or url_for('index') }}"
-                        aria-label="Delete this clip">
+                    aria-label="Delete this clip"
+                    title="Delete this clip">
                     <img class="header-selection-action-icon"
                          src="{{ url_for('static', filename='mdi/trash-can-outline-orange.svg') }}"
                          alt="">

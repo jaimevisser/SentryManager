@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -2 40 56" aria-hidden="true">
+  <defs>
+    <path id="marker-camera-shape"
+      d="M12,2A7,7 0 0,1 19,9C19,14.25 12,22 12,22C12,22 5,14.25 5,9A7,7 0 0,1 12,2Z"
+      transform="translate(8 13) translate(12 12) scale(2.5) translate(-12 -12) rotate(180 12 12)" />
+    <clipPath id="marker-camera-shape-clip">
+      <use href="#marker-camera-shape" />
+    </clipPath>
+  </defs>
+  <use href="#marker-camera-shape" fill="#1d1d1d" />
+  <use href="#marker-camera-shape"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="1.6"
+    stroke-linejoin="round"
+    vector-effect="non-scaling-stroke"
+    clip-path="url(#marker-camera-shape-clip)" />
+  <path fill="#ffffff"
+    transform="translate(8 20.5)"
+        d="M15,8V16H5V8H15M16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5V7A1,1 0 0,0 16,6Z" />
+</svg>

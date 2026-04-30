@@ -24,6 +24,7 @@
                                type="button"
                                data-layout-option="single"
                                aria-label="Single camera layout"
+                               title="Single camera layout"
                                aria-pressed="true">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/camera-layout-1.svg') }}"
@@ -36,6 +37,7 @@
                                type="button"
                                data-layout-option="double"
                                aria-label="Two camera layout"
+                               title="Two camera layout"
                                aria-pressed="false">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/camera-layout-2.svg') }}"
@@ -48,6 +50,7 @@
                                type="button"
                                data-layout-option="triple"
                                aria-label="Three camera layout"
+                               title="Three camera layout"
                                aria-pressed="false">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/camera-layout-3.svg') }}"
@@ -59,6 +62,7 @@
                        <button class="player-camera-overlay-button"
                                type="button"
                                data-camera-target="left_pillar"
+                               title="Left pillar camera"
                                aria-label="Left pillar camera">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/arrow-top-left-thick.svg') }}"
@@ -70,6 +74,7 @@
                        <button class="player-camera-overlay-button"
                                type="button"
                                data-camera-target="front"
+                               title="Front camera"
                                aria-label="Front camera">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/arrow-up-thick.svg') }}"
@@ -81,6 +86,7 @@
                        <button class="player-camera-overlay-button"
                                type="button"
                                data-camera-target="right_pillar"
+                               title="Right pillar camera"
                                aria-label="Right pillar camera">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/arrow-top-right-thick.svg') }}"
@@ -92,6 +98,7 @@
                        <button class="player-camera-overlay-button"
                                type="button"
                                data-camera-target="left_repeater"
+                               title="Left repeater camera"
                                aria-label="Left repeater camera">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/arrow-bottom-left-thick.svg') }}"
@@ -103,6 +110,7 @@
                        <button class="player-camera-overlay-button"
                                type="button"
                                data-camera-target="back"
+                               title="Rear camera"
                                aria-label="Rear camera">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/arrow-down-thick.svg') }}"
@@ -114,6 +122,7 @@
                        <button class="player-camera-overlay-button"
                                type="button"
                                data-camera-target="right_repeater"
+                               title="Right repeater camera"
                                aria-label="Right repeater camera">
                            <img class="player-camera-overlay-icon"
                                 data-inactive-src="{{ url_for('static', filename='mdi/arrow-bottom-right-thick.svg') }}"
@@ -204,25 +213,6 @@
                 </div>
             </div>
             <div class="player-controls" data-player-controls>
-                <div class="player-control-stack">
-                    <button class="player-control-button"
-                            type="button"
-                            data-player-toggle
-                            aria-label="Play"
-                            data-play-icon="{{ url_for('static', filename='mdi/play.svg') }}"
-                            data-pause-icon="{{ url_for('static', filename='mdi/pause.svg') }}">
-                        <img class="player-control-icon"
-                             data-player-toggle-icon
-                             src="{{ url_for('static', filename='mdi/play.svg') }}"
-                             alt=""
-                             aria-hidden="true">
-                    </button>
-                    <div class="player-edit-actions" aria-label="Timeline marker controls">
-                        <button class="player-edit-action" type="button" data-player-set-start>Start</button>
-                        <button class="player-edit-action" type="button" data-player-set-end>End</button>
-                        <button class="player-edit-action" type="button" data-player-add-camera-marker>Camera</button>
-                    </div>
-                </div>
                 <div class="player-scrub-group">
                     <div class="player-time-row">
                         <span data-player-current-time>0:00</span>
@@ -239,19 +229,120 @@
                                data-player-scrub
                                aria-label="Scrub through event timeline">
                     </div>
-                    <div class="player-edit-track" aria-label="Edit marker lane" data-player-edit-track>
+                    <div class="player-edit-track"
+                         aria-label="Edit marker lane"
+                         data-player-edit-track
+                         data-marker-camera-icon-url="{{ url_for('static', filename='mdi/marker-camera.svg') }}">
                         <div class="player-edit-track-line" aria-hidden="true"></div>
                         <div class="player-edit-track-fill" aria-hidden="true" data-player-edit-fill></div>
                         <button class="player-edit-marker player-edit-marker-start"
                                 type="button"
                                 data-player-start-marker
-                                data-marker-label="S"
-                                aria-label="Start marker"></button>
+                                aria-label="Start marker"
+                                title="Start marker">
+                            <img class="player-edit-marker-icon"
+                                 src="{{ url_for('static', filename='mdi/marker-start.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
                         <button class="player-edit-marker player-edit-marker-end"
                                 type="button"
                                 data-player-end-marker
-                                data-marker-label="E"
-                                aria-label="End marker"></button>
+                                aria-label="End marker"
+                                title="End marker">
+                            <img class="player-edit-marker-icon"
+                                 src="{{ url_for('static', filename='mdi/marker-end.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                    </div>
+                    <div class="player-action-row" aria-label="Playback and export controls">
+                        <button class="player-control-button"
+                                type="button"
+                                data-player-toggle
+                                aria-label="Play"
+                                title="Play"
+                                data-play-icon="{{ url_for('static', filename='mdi/play.svg') }}"
+                                data-pause-icon="{{ url_for('static', filename='mdi/pause.svg') }}">
+                            <img class="player-control-icon"
+                                 data-player-toggle-icon
+                                 src="{{ url_for('static', filename='mdi/play.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                        <button class="player-marker-action-button"
+                                type="button"
+                                data-player-set-start
+                                aria-label="Set start marker at the current time"
+                                title="Set start marker at the current time">
+                            <img class="player-marker-action-icon"
+                                 src="{{ url_for('static', filename='mdi/arrow-collapse-left.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                        <button class="player-marker-action-button"
+                                type="button"
+                                data-player-add-camera-marker
+                                aria-label="Add camera marker at the current time"
+                                title="Add camera marker at the current time">
+                            <img class="player-marker-action-icon"
+                                 src="{{ url_for('static', filename='mdi/video-outline.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                        <button class="player-marker-action-button"
+                                type="button"
+                                data-player-set-end
+                                aria-label="Set end marker at the current time"
+                                title="Set end marker at the current time">
+                            <img class="player-marker-action-icon"
+                                 src="{{ url_for('static', filename='mdi/arrow-collapse-right.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                        <div class="player-render-controls" aria-label="Export rendering controls">
+                        <div class="player-export-format-toggle" role="group" aria-label="Export format">
+                            <button class="player-export-format-button"
+                                    type="button"
+                                    data-export-format-option="4k"
+                                    aria-label="4K export format"
+                                    title="4K export format"
+                                    aria-pressed="true">
+                                <span class="player-export-format-label" aria-hidden="true">4k</span>
+                            </button>
+                            <button class="player-export-format-button"
+                                    type="button"
+                                    data-export-format-option="hd"
+                                    aria-label="HD export format"
+                                    title="HD export format"
+                                    aria-pressed="false">
+                                <span class="player-export-format-label" aria-hidden="true">HD</span>
+                            </button>
+                        </div>
+                        <button class="player-render-action-button"
+                                type="button"
+                                data-player-render-action
+                                aria-label="Export video"
+                                title="Export video"
+                                data-export-icon="{{ url_for('static', filename='mdi/export.svg') }}"
+                                data-rendering-icon="{{ url_for('static', filename='mdi/cog-outline.svg') }}">
+                            <img class="player-render-action-icon"
+                                 data-player-render-action-icon
+                                 src="{{ url_for('static', filename='mdi/export.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                        <button class="player-render-action-button"
+                                type="button"
+                                data-player-download-action
+                                aria-label="Download video"
+                                title="Download video">
+                            <img class="player-render-action-icon"
+                                 src="{{ url_for('static', filename='mdi/download.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                        </div>
                     </div>
                 </div>
             </div>

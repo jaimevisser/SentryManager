@@ -324,42 +324,7 @@
 }
 
 .player-controls {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    gap: 1rem;
     padding: 0 0.9rem;
-}
-
-.player-control-stack {
-    display: grid;
-    justify-items: center;
-    gap: 0.5rem;
-    min-width: 4.7rem;
-}
-
-.player-edit-actions {
-    display: grid;
-    gap: 0.32rem;
-    width: 100%;
-}
-
-.player-edit-action {
-    appearance: none;
-    border: 1px solid rgba(255, 255, 255, 0.58);
-    border-radius: 999px;
-    padding: 0.28rem 0.48rem;
-    background: var(--bg);
-    color: rgba(255, 255, 255, 0.92);
-    font: inherit;
-    font-size: 0.68rem;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.player-edit-action:focus-visible {
-    outline: 1px solid rgba(255, 255, 255, 0.72);
-    outline-offset: 0.14rem;
 }
 
 .player-status-value {
@@ -392,20 +357,20 @@
     align-items: center;
     justify-content: center;
     appearance: none;
-    border: 1px solid #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.58);
     border-radius: 999px;
-    width: 3rem;
-    height: 3rem;
+    width: 2.5rem;
+    height: 2.5rem;
     padding: 0;
     background: var(--bg);
-    color: #ffffff;
+    color: rgba(255, 255, 255, 0.92);
     font: inherit;
     cursor: pointer;
 }
 
 .player-control-icon {
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.35rem;
+    height: 1.35rem;
     display: block;
 }
 
@@ -415,9 +380,119 @@
 }
 
 .player-scrub-group {
-    flex: 1;
     display: grid;
     gap: 0.34rem;
+}
+
+.player-action-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    padding-top: 0.16rem;
+}
+
+.player-marker-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    appearance: none;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.58);
+    border-radius: 999px;
+    background: var(--bg);
+    cursor: pointer;
+}
+
+.player-marker-action-button:focus-visible {
+    outline: 1px solid rgba(255, 255, 255, 0.72);
+    outline-offset: 0.14rem;
+}
+
+.player-marker-action-icon {
+    width: 1.3rem;
+    height: 1.3rem;
+    display: block;
+}
+
+.player-render-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.4rem;
+}
+
+.player-export-format-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    height: 2.5rem;
+    padding: 0.22rem 0.28rem;
+    border: 1px solid rgba(255, 255, 255, 0.58);
+    border-radius: 999px;
+    background: var(--bg);
+    box-sizing: border-box;
+}
+
+.player-export-format-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    appearance: none;
+    width: 1.86rem;
+    height: 1.86rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.92);
+    cursor: pointer;
+}
+
+.player-export-format-button.is-active {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgb(255, 51, 45);
+}
+
+.player-export-format-button:focus-visible {
+    outline: 1px solid rgba(255, 255, 255, 0.72);
+    outline-offset: 0.14rem;
+}
+
+.player-export-format-label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    text-transform: none;
+}
+
+.player-render-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    appearance: none;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.58);
+    border-radius: 999px;
+    background: var(--bg);
+    cursor: pointer;
+}
+
+.player-render-action-button:focus-visible {
+    outline: 1px solid rgba(255, 255, 255, 0.72);
+    outline-offset: 0.14rem;
+}
+
+.player-render-action-icon {
+    width: 1.35rem;
+    height: 1.35rem;
+    display: block;
 }
 
 .player-scrub-track {
@@ -534,6 +609,9 @@
     position: absolute;
     top: 0;
     left: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
     width: 2.35rem;
     height: 2.55rem;
     padding: 0;
@@ -545,39 +623,17 @@
     z-index: 1;
 }
 
-.player-edit-marker::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 0.1rem;
-    width: 1.42rem;
-    height: 2.02rem;
-    background: rgba(238, 245, 247, 0.98);
-    border: 1px solid rgba(4, 9, 14, 0.88);
-    box-shadow: 0 0.16rem 0.45rem rgba(0, 0, 0, 0.34);
-    clip-path: polygon(50% 100%, 100% 46%, 84% 10%, 16% 10%, 0% 46%);
-    transform: translateX(-50%);
+.player-edit-marker-icon {
+    display: block;
+    width: 2.1667rem;
+    height: auto;
+    margin-top: -0.14rem;
+    pointer-events: none;
+    filter: drop-shadow(0 0.16rem 0.45rem rgba(0, 0, 0, 0.34));
 }
 
-.player-edit-marker::after {
-    content: attr(data-marker-label);
-    position: absolute;
-    left: 50%;
-    top: 0.46rem;
-    transform: translateX(-50%);
-    color: rgba(4, 9, 14, 0.92);
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-}
-
-.player-edit-marker-start::before,
-.player-edit-marker-end::before {
-    background: rgba(238, 245, 247, 0.98);
-}
-
-.player-edit-marker-start.is-open::before {
-    box-shadow: 0 0.16rem 0.45rem rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(116, 208, 255, 0.3), 0 0 0.8rem rgba(116, 208, 255, 0.22);
+.player-edit-marker.is-open .player-edit-marker-icon {
+    filter: drop-shadow(0 0.16rem 0.45rem rgba(0, 0, 0, 0.34)) drop-shadow(0 0 0.45rem rgba(116, 208, 255, 0.28));
 }
 
 .player-edit-camera-marker-shell {
@@ -600,18 +656,6 @@
     transform: none;
     width: 2.3rem;
     height: 2.5rem;
-}
-
-.player-edit-marker-camera::before {
-    background: rgba(116, 208, 255, 0.98);
-}
-
-.player-edit-marker-camera::after {
-    color: rgba(4, 9, 14, 0.96);
-}
-
-.player-edit-marker-camera.is-open::before {
-    box-shadow: 0 0.16rem 0.45rem rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(116, 208, 255, 0.3), 0 0 0.8rem rgba(116, 208, 255, 0.22);
 }
 
 .player-edit-camera-popover {

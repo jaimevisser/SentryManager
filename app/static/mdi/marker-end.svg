@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -2 40 56" aria-hidden="true">
+  <defs>
+    <path id="marker-end-shape"
+      d="M12,2A7,7 0 0,1 19,9C19,14.25 12,22 12,22C12,22 5,14.25 5,9A7,7 0 0,1 12,2Z"
+      transform="translate(8 13) translate(12 12) scale(2.5) translate(-12 -12) rotate(180 12 12)" />
+    <clipPath id="marker-end-shape-clip">
+      <use href="#marker-end-shape" />
+    </clipPath>
+  </defs>
+  <use href="#marker-end-shape" fill="#1d1d1d" />
+  <use href="#marker-end-shape"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="1.6"
+    stroke-linejoin="round"
+    vector-effect="non-scaling-stroke"
+    clip-path="url(#marker-end-shape-clip)" />
+  <path fill="#ffffff"
+    transform="translate(8 20.5)"
+    d="M12.08,4.08L20,12L12.08,19.92L10.67,18.5L16.17,13H2V11H16.17L10.67,5.5L12.08,4.08M20,12V22H22V2H20V12Z" />
+</svg>

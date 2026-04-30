@@ -83,6 +83,8 @@ export function initEventPlayer() {
     const setStartButton = document.querySelector("[data-player-set-start]");
     const setEndButton = document.querySelector("[data-player-set-end]");
     const addCameraMarkerButton = document.querySelector("[data-player-add-camera-marker]");
+    const exportFormatToggle = document.querySelector(".player-export-format-toggle");
+    const exportFormatButtons = Array.from(document.querySelectorAll("[data-export-format-option]"));
     const toggleButton = document.querySelector("[data-player-toggle]");
     const toggleIcon = document.querySelector("[data-player-toggle-icon]");
     const layoutButtons = Array.from(document.querySelectorAll("[data-layout-option]"));
@@ -128,6 +130,7 @@ export function initEventPlayer() {
     let trimInitialized = false;
     let trimEndPinnedToDuration = true;
     let activeTrimMarker = null;
+    let activeExportFormat = "4k";
     let cameraMarkers = [];
     let nextCameraMarkerId = 1;
     let activeCameraMarkerId = null;
@@ -285,11 +288,31 @@ export function initEventPlayer() {
         return Math.round(Math.max(0, value) * 1000) / 1000;
     }
 
+    function normalizeExportFormat(value) {
+        return value === "hd" ? "hd" : "4k";
+    }
+
+    function setExportFormat(nextFormat) {
+        const normalizedFormat = normalizeExportFormat(nextFormat);
+        if (normalizedFormat === activeExportFormat) {
+            return false;
+        }
+        activeExportFormat = normalizedFormat;
+        syncTimelineUI();
+        schedulePlayerEditsPersistence();
+        return true;
+    }
+
+    function toggleExportFormat() {
+        return setExportFormat(activeExportFormat === "4k" ? "hd" : "4k");
+    }
+
     function buildPlayerEditsPayload() {
         normalizeViewSelection(startMarkerViewSelection);
         return {
             trimStartTime: normalizePersistedTime(trimStartTime),
             trimEndTime: normalizePersistedTime(trimEndTime),
+            exportFormat: activeExportFormat,
             startMarkerView: {
                 layout: startMarkerViewSelection.layout,
                 cameraKey: startMarkerViewSelection.cameraKey,
@@ -376,6 +399,10 @@ export function initEventPlayer() {
             trimEndTime = Math.max(0, rawTrimEndTime);
             trimInitialized = true;
             trimEndPinnedToDuration = false;
+        }
+
+        if (typeof rawSavedPlayerEdits.exportFormat === "string") {
+            activeExportFormat = normalizeExportFormat(rawSavedPlayerEdits.exportFormat);
         }
 
         const rawStartMarkerView = rawSavedPlayerEdits.startMarkerView;
@@ -604,7 +631,13 @@ export function initEventPlayer() {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "player-edit-marker player-edit-marker-camera";
-        button.dataset.markerLabel = "c";
+
+        const icon = document.createElement("img");
+        icon.className = "player-edit-marker-icon";
+        icon.src = editTrack.dataset.markerCameraIconUrl || "/static/mdi/marker-camera.svg";
+        icon.alt = "";
+        icon.setAttribute("aria-hidden", "true");
+        button.append(icon);
 
         let draggedDuringPointerSequence = false;
         let pointerStartX = 0;
@@ -781,7 +814,9 @@ export function initEventPlayer() {
             node.shell.style.setProperty("--player-marker-drag-offset-y", "0px");
             node.shell.classList.remove("is-removing");
             node.shell.style.left = `${ratio * 100}%`;
-            node.button.setAttribute("aria-label", `Camera marker at ${formatClockTime(marker.time)}`);
+            const cameraMarkerLabel = `Camera marker at ${formatClockTime(marker.time)}`;
+            node.button.setAttribute("aria-label", cameraMarkerLabel);
+            node.button.setAttribute("title", cameraMarkerLabel);
             node.button.classList.toggle("is-open", activeCameraMarkerId === marker.id);
             node.popover.hidden = activeCameraMarkerId !== marker.id;
             node.popover.dataset.align = getCameraMarkerPopoverAlign(marker.time, totalDuration);
@@ -1294,8 +1329,12 @@ export function initEventPlayer() {
         editTrackFill.style.width = `${Math.max(0, (endRatio - startRatio) * 100)}%`;
         startMarkerButton.style.left = `${startRatio * 100}%`;
         endMarkerButton.style.left = `${endRatio * 100}%`;
-        startMarkerButton.setAttribute("aria-label", `Start marker at ${formatClockTime(trimStartTime)}`);
-        endMarkerButton.setAttribute("aria-label", `End marker at ${formatClockTime(trimEndTime)}`);
+        const startMarkerLabel = `Start marker at ${formatClockTime(trimStartTime)}`;
+        const endMarkerLabel = `End marker at ${formatClockTime(trimEndTime)}`;
+        startMarkerButton.setAttribute("aria-label", startMarkerLabel);
+        startMarkerButton.setAttribute("title", startMarkerLabel);
+        endMarkerButton.setAttribute("aria-label", endMarkerLabel);
+        endMarkerButton.setAttribute("title", endMarkerLabel);
         syncStartMarkerPopoverUI(totalDuration);
     }
 
@@ -1602,6 +1641,7 @@ export function initEventPlayer() {
             const isPaused = player.paused;
             const nextLabel = isPaused ? "Play" : "Pause";
             toggleButton.setAttribute("aria-label", nextLabel);
+            toggleButton.setAttribute("title", nextLabel);
             if (toggleIcon) {
                 toggleIcon.src = isPaused ? toggleButton.dataset.playIcon : toggleButton.dataset.pauseIcon;
             }
@@ -1631,6 +1671,12 @@ export function initEventPlayer() {
             if (icon?.dataset.activeSrc && icon?.dataset.inactiveSrc) {
                 icon.src = isActive ? icon.dataset.activeSrc : icon.dataset.inactiveSrc;
             }
+        }
+        for (const button of exportFormatButtons) {
+            const exportFormat = normalizeExportFormat(button.dataset.exportFormatOption);
+            const isActive = exportFormat === activeExportFormat;
+            button.classList.toggle("is-active", isActive);
+            button.setAttribute("aria-pressed", isActive ? "true" : "false");
         }
         syncBlinkerUI(eventTime);
         syncHeadingUI(eventTime);
@@ -2213,6 +2259,12 @@ export function initEventPlayer() {
                 return;
             }
             switchCamera(nextCameraKey);
+        });
+    }
+
+    if (exportFormatToggle) {
+        exportFormatToggle.addEventListener("click", () => {
+            toggleExportFormat();
         });
     }
 

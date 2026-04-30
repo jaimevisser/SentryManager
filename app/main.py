@@ -33,6 +33,7 @@ CAMERA_LABELS = {
 }
 
 PLAYER_LAYOUT_OPTIONS = {"single", "double", "triple"}
+EXPORT_FORMAT_OPTIONS = {"4k", "hd"}
 
 SENTRY_EVENT_CAMERA_MAP = {
     "0": "front",
@@ -646,8 +647,11 @@ def normalize_saved_player_edits(payload: object) -> dict[str, object] | None:
 
     trim_start_time = _coerce_nonnegative_number(payload.get("trimStartTime"))
     trim_end_time = _coerce_nonnegative_number(payload.get("trimEndTime"))
+    raw_export_format = payload.get("exportFormat", "4k")
     start_marker_view = normalize_player_view_selection(payload.get("startMarkerView"))
     raw_camera_markers = payload.get("cameraMarkers")
+    if not isinstance(raw_export_format, str) or raw_export_format not in EXPORT_FORMAT_OPTIONS:
+        return None
     if trim_start_time is None or trim_end_time is None or start_marker_view is None or not isinstance(raw_camera_markers, list):
         return None
 
@@ -678,6 +682,7 @@ def normalize_saved_player_edits(payload: object) -> dict[str, object] | None:
     return {
         "trimStartTime": trim_start_time,
         "trimEndTime": trim_end_time,
+        "exportFormat": raw_export_format,
         "startMarkerView": start_marker_view,
         "cameraMarkers": camera_markers,
     }
