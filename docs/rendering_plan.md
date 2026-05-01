@@ -397,7 +397,7 @@ Viewer-derived metadata rules:
 
 - Reserve bottom-left and bottom-right safe-zone overlays outside the visible video image area when letterboxing or pillarboxing creates available space.
 - The left safe zone is a vertical four-cell stack for left blinker, heading, brake, and one empty spacer slot.
-- The right safe zone is a vertical four-cell stack for right blinker, speed, autopilot state, and `FSD {percent}%` text.
+- The right safe zone is a vertical four-cell stack for right blinker, speed, autopilot state, and driver-assist text such as `FSD {percent}%` or `AP {percent}%`.
 - Speed is rendered in `km/h`.
 - Telemetry icons and text use a high-contrast white treatment with drop-shadow styling; the autopilot icon switches to blue when active.
 - Export should not include viewer-only controls, timeline markers, or popovers.
@@ -428,7 +428,7 @@ Rendering rules:
 
 - Do telemetry drawing in Python, not in complex `ffmpeg` text and icon expressions.
 - Reuse the same icon assets already used by the viewer.
-- Reproduce the current viewer text treatment, including `km/h` speed formatting and `FSD {percent}%` text.
+- Reproduce the current viewer text treatment, including `km/h` speed formatting and driver-assist text such as `FSD {percent}%` or `AP {percent}%`.
 - Show only telemetry-driven metadata, not viewer controls or editing chrome.
 - Keep overlay rendering deterministic so the same timeline input always produces the same visual output.
 

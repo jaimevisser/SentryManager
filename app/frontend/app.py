@@ -159,7 +159,7 @@ def create_app() -> Flask:
 
         default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
         event_processing_state = load_event_processing_state(event_dir)
-        event_fsd_on_percent = get_event_fsd_on_percent(event_processing_state)
+        event_driver_assist_display = get_event_driver_assist_display(event_processing_state)
         saved_player_edits = get_saved_player_edits(event_processing_state)
         normalized_edit_segments = get_normalized_edit_segments(event_summary.path, saved_player_edits)
         if event_processing_state.get("normalizedEditSegments") != normalized_edit_segments:
@@ -192,7 +192,7 @@ def create_app() -> Flask:
             },
             event_has_autopilot_activity=event_processing_state.get("hasAutopilotActivity", False),
             event_has_steering_angle_data=event_processing_state.get("hasSteeringAngleData", False),
-            event_fsd_on_percent=event_fsd_on_percent,
+            event_driver_assist_display=event_driver_assist_display,
             event_marker_time=event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
             initial_start_time=initial_start_time,
             saved_player_edits=saved_player_edits,
@@ -700,7 +700,22 @@ def load_event_processing_state(event_dir: Path) -> dict[str, object]:
     return payload
 
 
-def get_event_fsd_on_percent(event_processing_state: dict[str, object]) -> float | None:
+def get_event_driver_assist_display(event_processing_state: dict[str, object]) -> dict[str, object] | None:
+    raw_display = event_processing_state.get("driverAssistDisplay")
+    if isinstance(raw_display, dict):
+        raw_label = raw_display.get("label")
+        raw_percent = raw_display.get("percent")
+        raw_text = raw_display.get("text")
+        if isinstance(raw_label, str) and raw_label in {"FSD", "AP"} and isinstance(raw_percent, int | float):
+            percent = float(raw_percent)
+            if math.isfinite(percent):
+                clamped_percent = max(0.0, min(100.0, percent))
+                return {
+                    "label": raw_label,
+                    "percent": clamped_percent,
+                    "text": raw_text if isinstance(raw_text, str) and raw_text.strip() else f"{raw_label} {round(clamped_percent)}%",
+                }
+
     raw_fsd_on_percent = event_processing_state.get("fsdOnPercent")
     if not isinstance(raw_fsd_on_percent, int | float):
         return None
@@ -709,7 +724,12 @@ def get_event_fsd_on_percent(event_processing_state: dict[str, object]) -> float
     if not math.isfinite(fsd_on_percent):
         return None
 
-    return max(0.0, min(100.0, fsd_on_percent))
+    clamped_percent = max(0.0, min(100.0, fsd_on_percent))
+    return {
+        "label": "FSD",
+        "percent": clamped_percent,
+        "text": f"FSD {round(clamped_percent)}%",
+    }
 
 
 def _coerce_nonnegative_number(value: object) -> float | None:

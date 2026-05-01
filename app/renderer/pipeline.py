@@ -334,7 +334,7 @@ def render_event(
         for clip in render_plan["mediaIndex"]
     }
     event_processing_state = _load_event_processing_state(event_dir)
-    event_fsd_on_percent = _coerce_optional_percentage(event_processing_state.get("fsdOnPercent"))
+    event_driver_assist_display = _get_event_driver_assist_display(event_processing_state)
 
     segment_outputs: list[Path] = []
     for segment in render_plan["segments"]:
@@ -342,7 +342,7 @@ def render_event(
         _render_segment(
             segment=segment,
             event_dir=event_dir,
-            event_fsd_on_percent=event_fsd_on_percent,
+            event_driver_assist_display=event_driver_assist_display,
             frame_size=render_plan["frameSize"],
             frame_rate=float(render_plan["frameRate"]),
             media_clips_by_path=media_clips_by_path,
@@ -824,7 +824,7 @@ def _render_segment(
 def _render_segment_telemetry_overlay(
     segment: dict[str, object],
     event_dir: Path,
-    event_fsd_on_percent: float | None,
+    event_driver_assist_display: dict[str, object] | None,
     frame_size: dict[str, int],
     frame_rate: float,
     media_clips_by_path: dict[str, dict[str, object]],
@@ -835,7 +835,7 @@ def _render_segment_telemetry_overlay(
         return False
 
     safe_zones = _get_safe_zone_rects(segment, frame_size, media_clips_by_path)
-    if safe_zones["left"] is None and safe_zones["right"] is None and event_fsd_on_percent is None:
+    if safe_zones["left"] is None and safe_zones["right"] is None and event_driver_assist_display is None:
         return False
 
     overlay_process = subprocess.Popen(
@@ -873,7 +873,7 @@ def _render_segment_telemetry_overlay(
                 frame_size=frame_size,
                 safe_zones=safe_zones,
                 telemetry_point=telemetry_point,
-                event_fsd_on_percent=event_fsd_on_percent,
+                event_driver_assist_display=event_driver_assist_display,
             )
             rendered_any_overlay = rendered_any_overlay or has_overlay
             overlay_process.stdin.write(overlay_frame.tobytes())
@@ -950,7 +950,7 @@ def _draw_telemetry_frame(
     frame_size: dict[str, int],
     safe_zones: dict[str, tuple[float, float, float, float] | None],
     telemetry_point: dict[str, object] | None,
-    event_fsd_on_percent: float | None,
+    event_driver_assist_display: dict[str, object] | None,
 ) -> tuple[Image.Image, bool]:
     image = Image.new("RGBA", (int(frame_size["width"]), int(frame_size["height"])), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -966,7 +966,7 @@ def _draw_telemetry_frame(
     if left_zone is not None:
         has_overlay = _draw_left_safe_zone(image, draw, left_zone, sample) or has_overlay
     if right_zone is not None:
-        has_overlay = _draw_right_safe_zone(image, draw, right_zone, sample, event_fsd_on_percent) or has_overlay
+        has_overlay = _draw_right_safe_zone(image, draw, right_zone, sample, event_driver_assist_display) or has_overlay
     return image, has_overlay
 
 
@@ -998,7 +998,7 @@ def _draw_right_safe_zone(
     draw: ImageDraw.ImageDraw,
     rect: tuple[float, float, float, float],
     sample: dict[str, object] | None,
-    event_fsd_on_percent: float | None,
+    event_driver_assist_display: dict[str, object] | None,
 ) -> bool:
     cells = _get_safe_zone_cells(rect)
     rendered = False
@@ -1026,17 +1026,42 @@ def _draw_right_safe_zone(
                 fill=AUTOPILOT_ACTIVE_COLOR if sample["autopilotActive"] else TELEMETRY_COLOR,
             )
         rendered = True
-    if event_fsd_on_percent is not None:
+    if event_driver_assist_display is not None:
         fsd_font = _fit_safe_zone_text_font(rect, 0.10, 0.088)
         _draw_centered_text(
             draw,
             cells[3],
-            f"FSD {round(event_fsd_on_percent)}%",
+            str(event_driver_assist_display.get("text") or ""),
             fsd_font,
             letter_spacing=_get_text_letter_spacing(fsd_font, 0.08),
         )
         rendered = True
     return rendered
+
+
+def _get_event_driver_assist_display(event_processing_state: dict[str, object]) -> dict[str, object] | None:
+    raw_display = event_processing_state.get("driverAssistDisplay")
+    if isinstance(raw_display, dict):
+        raw_label = raw_display.get("label")
+        raw_percent = raw_display.get("percent")
+        raw_text = raw_display.get("text")
+        if isinstance(raw_label, str) and raw_label in {"FSD", "AP"} and isinstance(raw_percent, int | float):
+            percent = _coerce_optional_percentage(raw_percent)
+            if percent is not None:
+                return {
+                    "label": raw_label,
+                    "percent": percent,
+                    "text": raw_text if isinstance(raw_text, str) and raw_text.strip() else f"{raw_label} {round(percent)}%",
+                }
+
+    legacy_fsd_on_percent = _coerce_optional_percentage(event_processing_state.get("fsdOnPercent"))
+    if legacy_fsd_on_percent is None:
+        return None
+    return {
+        "label": "FSD",
+        "percent": legacy_fsd_on_percent,
+        "text": f"FSD {round(legacy_fsd_on_percent)}%",
+    }
 
 
 def _draw_heading_cell(

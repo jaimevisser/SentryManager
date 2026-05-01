@@ -187,7 +187,7 @@
                             <div class="player-safe-zone-cell">
                                 <span class="player-safe-zone-text player-safe-zone-text-compact"
                                       data-player-fsd-percent
-                                      {% if event_fsd_on_percent is none %}hidden{% endif %}>FSD {{ event_fsd_on_percent|round|int if event_fsd_on_percent is not none else '' }}%</span>
+                                      {% if event_driver_assist_display is none %}hidden{% endif %}>{{ event_driver_assist_display.text if event_driver_assist_display is not none else '' }}</span>
                             </div>
                         </div>
                     </div>
@@ -349,7 +349,7 @@
                     </div>
                 </div>
             </div>
-            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data, 'fsdOnPercent': event_fsd_on_percent}, 'savedEdits': saved_player_edits, 'normalizedEditSegments': normalized_edit_segments, 'playerEditsSaveUrl': player_edits_save_url, 'playerRenderUrl': player_render_url, 'playerDownloadUrl': player_download_url, 'latestRender': latest_render}|tojson }}</script>
+            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data, 'driverAssistDisplay': event_driver_assist_display}, 'savedEdits': saved_player_edits, 'normalizedEditSegments': normalized_edit_segments, 'playerEditsSaveUrl': player_edits_save_url, 'playerRenderUrl': player_render_url, 'playerDownloadUrl': player_download_url, 'latestRender': latest_render}|tojson }}</script>
         {% else %}
             <div class="player-empty-state">No camera clips were found for this event yet.</div>
         {% endif %}

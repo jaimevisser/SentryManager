@@ -1,55 +1,55 @@
 # Tesla Dashcam SEI Metadata Overview
 
-This note summarizes what Tesla's official dashcam tooling says can be extracted from supported MP4 files, and how that applies to the footage in this repository.
+This note summarizes what Tesla's upstream dashcam tooling exposes, what we confirmed locally, and how SentryManager currently uses that data.
 
 ## Bottom Line
 
-Tesla's official [dashcam](https://github.com/teslamotors/dashcam) repository confirms that supported dashcam MP4 files can contain embedded SEI metadata with telemetry such as:
+Tesla's official [dashcam](https://github.com/teslamotors/dashcam) repository confirms that supported MP4 clips can carry telemetry in H.264 SEI NAL units.
+
+Useful fields include:
 
 - vehicle speed
 - steering wheel angle
 - gear state
-- left and right blinker state
-- brake applied state
-- autopilot or self-driving state
+- left and right blinkers
+- brake applied
+- autopilot state
 - latitude and longitude
 - heading
 - linear acceleration on three axes
 
-This data is not exposed as ordinary MP4 container tags. It is carried inside H.264 SEI NAL units and decoded with Tesla's `dashcam.proto` protobuf schema.
+This is not ordinary MP4 container metadata. Tesla stores it in H.264 SEI user-data payloads decoded with the `dashcam.proto` protobuf schema.
 
 ## Availability Constraints
 
-Tesla's upstream README states that SEI metadata is only expected when all of these are true:
+Tesla's upstream README says SEI metadata is only expected when all of these are true:
 
 - the clip was recorded on Tesla firmware `2025.44.25` or later
 - the car is `HW3` or above
 - the clip is not a parked case where Tesla omits SEI metadata
 
-The upstream repo explicitly warns that not all Tesla-generated clips contain SEI data.
+Not every Tesla-generated clip contains SEI data.
 
 ## Extractable Fields
 
-The upstream `dashcam.proto` defines this `SeiMetadata` message:
+The upstream `SeiMetadata` schema covers:
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `version` | `uint32` | Schema or payload version marker. |
-| `gear_state` | `enum Gear` | Vehicle gear state. |
-| `frame_seq_no` | `uint64` | Frame sequence number tied to the telemetry sample. |
-| `vehicle_speed_mps` | `float` | Vehicle speed in meters per second. |
-| `accelerator_pedal_position` | `float` | Accelerator pedal position. The schema does not document the unit further. |
-| `steering_wheel_angle` | `float` | Steering wheel angle. |
-| `blinker_on_left` | `bool` | Left blinker active. |
-| `blinker_on_right` | `bool` | Right blinker active. |
-| `brake_applied` | `bool` | Brake pedal applied. |
-| `autopilot_state` | `enum AutopilotState` | Tesla self-driving or driver-assist state. |
-| `latitude_deg` | `double` | Latitude in degrees. |
-| `longitude_deg` | `double` | Longitude in degrees. |
-| `heading_deg` | `double` | Vehicle heading in degrees. |
-| `linear_acceleration_mps2_x` | `double` | Linear acceleration, X axis, in meters per second squared. |
-| `linear_acceleration_mps2_y` | `double` | Linear acceleration, Y axis, in meters per second squared. |
-| `linear_acceleration_mps2_z` | `double` | Linear acceleration, Z axis, in meters per second squared. |
+- `version`
+- `gear_state`
+- `frame_seq_no`
+- `vehicle_speed_mps`
+- `accelerator_pedal_position`
+- `steering_wheel_angle`
+- `blinker_on_left`
+- `blinker_on_right`
+- `brake_applied`
+- `autopilot_state`
+- `latitude_deg`
+- `longitude_deg`
+- `heading_deg`
+- `linear_acceleration_mps2_x`
+- `linear_acceleration_mps2_y`
+- `linear_acceleration_mps2_z`
 
 ### Enum Values
 
@@ -69,70 +69,40 @@ The upstream `dashcam.proto` defines this `SeiMetadata` message:
 
 ## How Tesla Extracts It
 
-Tesla's upstream tools extract telemetry by:
+Tesla's upstream path is:
 
 1. Reading the MP4 `mdat` atom directly.
 2. Walking H.264 NAL units.
-3. Filtering for NAL type `6`, which is SEI.
-4. Filtering again for SEI payload type `5`, which is `user data unregistered`.
-5. Removing H.264 emulation-prevention bytes.
-6. Decoding the remaining payload as the `SeiMetadata` protobuf.
+3. Filtering for SEI NAL type `6`.
+4. Filtering for `user data unregistered` payloads.
+5. Stripping H.264 emulation-prevention bytes.
+6. Decoding the remaining payload as protobuf.
 
-That means the authoritative path is:
-
-- not ordinary MP4 container metadata
-- not `event.json`
-- not filename parsing
-- but H.264 bitstream SEI payload extraction
-
-## Upstream Tools Worth Reusing
-
-The Tesla repo provides three practical extraction surfaces:
-
-### 1. Browser SEI Explorer
-
-- `sei_explorer.html`
-- local-only browser workflow
-- shows video playback with SEI values beside the current frame
-- can export CSV for one file or a ZIP of CSVs for multiple files
-
-### 2. Python CLI Extractor
-
-- `sei_extractor.py`
-- command line CSV output
-- uses `dashcam.proto` compiled to Python protobuf bindings
-- good fit for server-side ingest or batch indexing
-
-### 3. JavaScript MP4 Parser
-
-- `dashcam-mp4.js`
-- parses MP4 structure and SEI payloads in-browser
-- already separates low-level MP4 parsing from UI rendering
-- useful reference if we want a native JS extractor in SentryManager
+So the authoritative source is the H.264 bitstream, not `event.json`, filenames, or MP4 container tags.
 
 ## What We Confirmed Locally
 
-Using the footage already in this repository:
+Local checks in this repo showed:
 
 - [data/TeslaCam/SavedClips/2026-03-28_09-12-13/2026-03-28_09-11-48-back.mp4](../data/TeslaCam/SavedClips/2026-03-28_09-12-13/2026-03-28_09-11-48-back.mp4) shows repeated `H.26[45] User Data Unregistered SEI message` entries when inspected with `ffprobe`, and `ffmpeg -v trace` shows H.264 `nal_unit_type: 6(SEI)` packets.
 - [data/TeslaCam/SentryClips/2026-03-26_12-10-33/2026-03-26_12-09-59-front.mp4](../data/TeslaCam/SentryClips/2026-03-26_12-10-33/2026-03-26_12-09-59-front.mp4) did not surface the same SEI user-data markers in the quick `ffprobe` frame inspection.
 
-So the current evidence in this repo matches Tesla's warning that SEI is not guaranteed for every clip, and it supports the working assumption that `SavedClips` are more likely than parked `SentryClips` to contain the richer telemetry.
+That matches Tesla's warning that SEI is not guaranteed, and it supports the working assumption that `SavedClips` are more likely than parked `SentryClips` to contain richer telemetry.
 
-## What Remains Outside SEI
+## Non-SEI Metadata
 
-Even when SEI is absent, we can still extract useful metadata from other sources:
+Even without SEI, the app can still use:
 
 - clip filename timestamps
 - camera angle from filename suffix
 - MP4 creation time, duration, resolution, codec, and frame timing from `ffprobe`
 - event-level `event.json` fields such as timestamp, city, street, reason, and estimated coordinates
 
-These sources complement SEI. They do not replace it.
+These complement SEI. They do not replace it.
 
 ## Practical SentryManager Implications
 
-For compatible clips, SentryManager can eventually ingest and index:
+For compatible clips, SentryManager can use SEI for:
 
 - motion and control state over time
 - turn-signal and braking events
@@ -140,54 +110,73 @@ For compatible clips, SentryManager can eventually ingest and index:
 - position and heading traces
 - per-frame or per-sample vehicle telemetry aligned to video playback
 
-The best backend path is probably to adapt Tesla's Python extractor logic into our ingest pipeline, then store decoded SEI samples as time-aligned records per clip.
+The current implementation already does this extraction in Python and repacks the decoded samples into a frontend-friendly binary sidecar.
 
-## Recommended Frontend Format
+## Current SentryManager Implementation
 
-For SentryManager, the best transport and storage format after backend SEI decoding is a compact binary payload delivered as an `ArrayBuffer`.
+The app currently:
 
-The recommended flow is:
+- reads the MP4 bitstream directly
+- parses frame timing from `moov/trak/mdia/minf/stbl/stts`
+- extracts SEI payloads from `mdat`
+- timestamps decoded samples against elapsed frame time
+- writes one sidecar per segment as `<segment-key>-telemetry.sei.bin`
+- updates `sentrymanager.json` with `hasAutopilotActivity`, `hasSteeringAngleData`, `eventCategoryLabel`, and a mode-aware `driverAssistDisplay`
 
-1. Decode Tesla's SEI protobuf on the backend.
-2. Normalize the samples onto clip-relative or event-relative time.
-3. Repack the decoded telemetry into a compact columnar binary layout.
-4. Send that binary blob to the frontend and read it with JavaScript typed arrays.
+Important behavior from the codebase:
 
-This is a better fit than sending raw protobuf messages or large JSON arrays because:
+- Sidecars are generated when the event page loads, not during broad discovery.
+- The `front` clip is the preferred source for a segment. If no `front` clip exists, the app falls back to the first available camera for that segment.
+- Sidecars are segment-scoped, not camera-scoped, so `2026-03-28_09-11-48-front.mp4` and `...-back.mp4` both map to `2026-03-28_09-11-48-telemetry.sei.bin`.
+- The event-level assist label prefers `FSD` only when `SELF_DRIVING` appears. If not, but `AUTOSTEER` or `TACC` appears, the app shows `AP` instead.
+- If a segment yields no SEI samples, the sidecar is removed or omitted, but the event marker is still written.
+- Existing unknown keys in `sentrymanager.json` are preserved when SEI processing rewrites the marker.
 
-- JavaScript supports `ArrayBuffer`, `DataView`, and typed arrays natively.
-- repeated field names and object overhead disappear
-- dense time-series telemetry compresses well in columnar form
-- the frontend can render telemetry without redoing MP4 parsing or protobuf decoding
-- the same stored blob can be reused for playback overlays, markers, analytics, and export logic
-
-The ideal representation is a small header plus typed-array-backed columns for the main signals, for example:
-
-- sample time deltas
-- speed
-- steering angle
-- heading
-- latitude and longitude deltas
-- acceleration axes
-- gear state
-- autopilot state
-- packed boolean flags for blinkers and brake state
-
-In practice, this means the browser should receive decoded and repacked telemetry, not raw SEI bitstreams.
+See [docs/data.md](data.md) for the current persisted marker fields.
 
 ## Current Sidecar Format
 
-The app now writes one telemetry sidecar file per segment using the segment timestamp basename plus the `-telemetry.sei.bin` suffix.
+Each sidecar starts with:
+
+- magic `SEI1`
+- format version `1`
+- aligned header size
+- sample count
+- max observed schema version
+- column mask
+- one offset per column
+
+The current columns are:
+
+- `time_ms`
+- `presence_bits`
+- `message_version`
+- `frame_seq_no`
+- `gear_state`
+- `autopilot_state`
+- `flags`
+- `speed_cmps`
+- `accelerator_centi`
+- `steering_tenths_deg`
+- `heading_cdeg`
+- `latitude_e7`
+- `longitude_e7`
+- `accel_x_mmps2`
+- `accel_y_mmps2`
+- `accel_z_mmps2`
+
+The binary format is columnar and 8-byte aligned. Numeric values are quantized before packing:
+
+- speed to centimeters per second
+- accelerator position to centi-units
+- steering angle to tenths of a degree
+- heading to centidegrees
+- latitude and longitude to `1e-7` degrees
+- acceleration to millimeters per second squared
 
 Examples:
 
 - `2026-03-28_09-11-48-front.mp4` -> `2026-03-28_09-11-48-telemetry.sei.bin`
 - `2026-03-28_09-11-48-back.mp4` -> `2026-03-28_09-11-48-telemetry.sei.bin`
 
-These sidecars are generated during clip discovery, not deferred until playback. If a sidecar already exists, the app leaves it in place and skips re-extraction for that segment.
-
-The `front` camera is used as the primary extraction source when it exists. If a segment has no `front` clip, the app falls back to the first available camera clip for that segment. The telemetry payload is stored in the same ArrayBuffer-oriented columnar binary layout that the frontend can consume later without needing a second conversion step.
-
-Each processed event folder also gets a `sentrymanager.json` file. That marker now carries lightweight event-level metadata such as `hasAutopilotActivity`, and when autopilot-state SEI samples are present it also stores `fsdOnPercent` for the share of observed clip time where Tesla reported a nonzero autopilot state. This lets the app surface event-level autopilot context without rescanning every segment on page load.
-
-If a segment produces no SEI samples, the app does not create a telemetry sidecar for that segment. Instead, it writes a `sentrymanager.json` file containing `{}` into the event folder so it is still clear that the folder has been processed.
+This gives the frontend a compact `ArrayBuffer` payload without requiring browser-side MP4 parsing or protobuf decoding.

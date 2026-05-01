@@ -49,10 +49,8 @@ export function initEventPlayer() {
     const eventFlags = playlistConfig?.eventFlags;
     const eventHasAutopilotActivity = Boolean(eventFlags?.hasAutopilotActivity);
     const eventHasSteeringAngleData = Boolean(eventFlags?.hasSteeringAngleData);
-    const rawEventFsdOnPercent = eventFlags?.fsdOnPercent;
-    const eventFsdOnPercent = typeof rawEventFsdOnPercent === "number" && Number.isFinite(rawEventFsdOnPercent)
-        ? Math.max(0, Math.min(100, rawEventFsdOnPercent))
-        : null;
+    const rawDriverAssistDisplay = eventFlags?.driverAssistDisplay;
+    const eventDriverAssistDisplay = normalizeDriverAssistDisplay(rawDriverAssistDisplay);
     const eventMarkerTime = typeof rawEventMarkerTime === "number" && Number.isFinite(rawEventMarkerTime)
         ? rawEventMarkerTime
         : null;
@@ -1661,11 +1659,33 @@ export function initEventPlayer() {
         return `<span class="player-safe-zone-value-number">${roundedSpeed}</span><span class="player-safe-zone-value-unit">km/h</span>`;
     }
 
-    function formatFsdPercentText(fsdOnPercent) {
-        if (fsdOnPercent === null) {
+    function normalizeDriverAssistDisplay(rawDriverAssistDisplay) {
+        if (!rawDriverAssistDisplay || typeof rawDriverAssistDisplay !== "object") {
+            return null;
+        }
+
+        const rawLabel = rawDriverAssistDisplay.label;
+        const rawPercent = rawDriverAssistDisplay.percent;
+        const rawText = rawDriverAssistDisplay.text;
+        if ((rawLabel !== "FSD" && rawLabel !== "AP") || typeof rawPercent !== "number" || !Number.isFinite(rawPercent)) {
+            return null;
+        }
+
+        const percent = Math.max(0, Math.min(100, rawPercent));
+        return {
+            label: rawLabel,
+            percent,
+            text: typeof rawText === "string" && rawText.trim()
+                ? rawText
+                : `${rawLabel} ${Math.round(percent)}%`,
+        };
+    }
+
+    function formatDriverAssistDisplayText(driverAssistDisplay) {
+        if (driverAssistDisplay === null) {
             return "";
         }
-        return `FSD ${Math.round(fsdOnPercent)}%`;
+        return driverAssistDisplay.text;
     }
 
     function findTelemetrySampleIndex(timeMs, telemetry) {
@@ -1830,14 +1850,14 @@ export function initEventPlayer() {
             return;
         }
 
-        if (eventFsdOnPercent === null) {
+        if (eventDriverAssistDisplay === null) {
             fsdPercentNode.hidden = true;
             fsdPercentNode.textContent = "";
             return;
         }
 
         fsdPercentNode.hidden = false;
-        fsdPercentNode.textContent = formatFsdPercentText(eventFsdOnPercent);
+        fsdPercentNode.textContent = formatDriverAssistDisplayText(eventDriverAssistDisplay);
     }
 
     function syncTimelineUI() {

@@ -40,7 +40,7 @@ const FIXTURES = [
     eventId: 'SavedClips/2026-03-31_06-53-21',
     segmentKey: '2026-03-31_06-43-49',
     clipTimeSeconds: 30.0,
-    coverage: ['speed', 'steering wheel blue', 'FSD percent'],
+    coverage: ['speed', 'steering wheel blue', 'driver-assist percent'],
   },
 ];
 

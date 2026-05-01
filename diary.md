@@ -21,3 +21,6 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 ### 2026-05-01
 - 20:23 Removed completed work from `TODO.md` and moved current functionality notes into `README.md`, `docs/brief.md`, and `docs/data.md`.
 - 20:27 Refreshed `docs/data.md` against the code so it documents the real `sentrymanager.json`, `playerEdits`, normalized segments, playlists, media index, render jobs, and render-plan fields.
+- 20:36 Tersified `docs/brief.md`, removed duplicated implementation detail, and pointed readers to `README.md`, `docs/data.md`, and `TODO.md` for current state.
+- 20:39 Tersified `docs/sei-metadata.md` and updated it with current code-path behavior, including event-page sidecar generation, segment-level sidecar naming, marker updates, and the packed binary column format.
+- 20:51 Changed driver-assist percentage display to prefer `FSD` only for `SELF_DRIVING`, fall back to `AP` for `AUTOSTEER` plus `TACC`, and threaded that mode-aware label through both stage and export rendering.

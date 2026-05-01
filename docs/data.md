@@ -18,14 +18,16 @@ Fields written directly by the app today:
 - `hasAutopilotActivity`: boolean
 - `hasSteeringAngleData`: boolean
 - `eventCategoryLabel`: string or `null`
-- `fsdOnPercent`: number from `0` to `100` when autopilot-state SEI data exists
+- `driverAssistDisplay`: object with `label`, `percent`, and `text` when the event has `SELF_DRIVING`, `AUTOSTEER`, or `TACC` samples
+- `fsdOnPercent`: legacy compatibility field retained only when the display label is `FSD`
 - `playerEdits`: saved player edit payload
 - `normalizedEditSegments`: normalized segment list derived from `playerEdits`
 - `latestRender`: metadata for the latest successful export
 
 Implementation notes:
 
-- The SEI processing path updates autopilot and steering flags plus `eventCategoryLabel` and `fsdOnPercent`.
+- The SEI processing path updates autopilot and steering flags plus `eventCategoryLabel` and `driverAssistDisplay`.
+- `driverAssistDisplay` shows `FSD` only when `SELF_DRIVING` is present. If no `SELF_DRIVING` samples exist but `AUTOSTEER` or `TACC` does, it shows `AP` instead.
 - The player and render routes also write `playerEdits` and `normalizedEditSegments`.
 - Successful renders persist `latestRender` back into the same file.
 - Existing unknown keys are preserved when the marker is rewritten.
@@ -79,7 +81,7 @@ The event page payload also includes:
 - `initialStartTime`
 - `eventFlags.hasAutopilotActivity`
 - `eventFlags.hasSteeringAngleData`
-- `eventFlags.fsdOnPercent`
+- `eventFlags.driverAssistDisplay`
 - `savedEdits`
 - `normalizedEditSegments`
 - `playerEditsSaveUrl`
