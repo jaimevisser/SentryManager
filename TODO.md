@@ -7,8 +7,13 @@
 - Event discovery is broader than the original scaffold note implied: the index scans direct event folders plus one- and two-level TeslaCam layouts, caches in-memory summaries, and enriches cards from `event.json`, `thumb.png`, and `sentrymanager.json`.
 - The review UI already supports grouped browsing, event thumbnails, location/category chips, trigger-aware Sentry defaults, synchronized clip progression, composite camera views, and telemetry-backed speed/blinker/autopilot indicators.
 - The player now supports persisted trim handles, a saved start-marker view, and camera markers in each event's `sentrymanager.json`, but those edits are still stored as raw marker state rather than normalized timeline segments.
-- There is still no durable ingest store, normalized edit-segment model, or export pipeline.
-- The best next implementation slice is to normalize the saved marker state into contiguous edit segments, then persist the event, clip, coverage, and telemetry model in a local store so export can consume deterministic timeline data.
+- The Flask review app now lives under `app/frontend/`, with templates and static assets moved under that package, while render normalization and plan generation live under `app/renderer/`.
+- Saved player edits are now normalized into contiguous edit segments and written back into `sentrymanager.json` as `normalizedEditSegments`.
+- The renderer can now probe source clips with `ffprobe`, generate declarative render plans from normalized segments, and execute queued render jobs in the dedicated `worker` service via the file-backed job store under `.sentrymanager/render-jobs`.
+- `tests/test_renderer_pipeline.py` now covers edit-segment normalization plus render-plan generation across clip boundaries and missing-camera coverage without invoking `ffmpeg`.
+- The current app container now includes `ffmpeg`, and the queued worker-backed export plus latest-download flow has been validated end-to-end against `SavedClips/2026-03-28_09-12-13`.
+- Telemetry overlay positioning and sizing in rendered exports were revalidated against fresh frames for `SavedClips/2026-03-28_09-12-13`; the renderer now matches the browser's compact bottom-corner safe zones by using the same union-of-layouts safe-zone geometry, and the short validation clip's telemetry values are confirmed to be effectively constant in source data.
+- A Playwright render-snapshot regression suite now captures deterministic browser stage frames and compares them against backend export frames for left blinker, right blinker, brake, and blue-FSD fixtures taken from real `SavedClips` footage; the browser snapshot hook now waits for initial player seeks to settle before capture so the suite is stable.
 
 This file tracks the delivery plan for SentryManager as discrete implementation steps.
 
@@ -49,8 +54,8 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Show event-level `fsdOnPercent` in the right stage-safe overlay during playback.
 - [x] Overlay a transparent 3x3 camera icon grid on the top-left of the main player image.
 - [x] Replace the old camera selector row with overlay-driven 1/2/3 camera layouts and camera-target arrows.
-- [ ] Add export controls to the event player for starting an export from the current edit state.
-- [ ] Surface export readiness, active-job state, and the latest output/error details in the event player UI.
+- [x] Add export controls to the event player for starting an export from the current edit state.
+- [x] Surface export readiness, active-job state, and the latest output/error details in the event player UI.
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
 
 ## Phase 4: Editing Model
@@ -61,7 +66,7 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Add start-marker layout/camera selection so playback can begin in a saved perspective before the first camera marker.
 - [x] Persist player trim and camera markers in each event's `sentrymanager.json` and hydrate them on reload.
 - [x] Open the player at the saved trim start when a persisted start marker is present.
-- [ ] Normalize the saved trim range, start-marker view, and camera markers into contiguous edit segments.
+- [x] Normalize the saved trim range, start-marker view, and camera markers into contiguous edit segments.
 - [ ] Show derived segment boundaries and active-segment selection on the event timeline.
 - [ ] Let users split, merge, and retime segments without rebuilding raw marker state by hand.
 - [ ] Add per-segment editing controls for labels, notes, and optional playback-rate overrides.
@@ -69,10 +74,10 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 ## Phase 5: Export Pipeline
 
 - [ ] Make export composition match the browser stage rendering for trims, camera switches, multi-camera layouts, and stage-safe overlays.
-- [ ] Convert normalized edit segments into an `ffmpeg` render plan.
+- [x] Convert normalized edit segments into an `ffmpeg` render plan.
 - [ ] Generate background-rendered telemetry corner overlay assets that can be stitched into the final export timeline.
 - [ ] Composite telemetry corner overlays with the source-camera layout render so exported video preserves the viewer telemetry treatment.
-- [ ] Render export jobs directly from original source clips.
+- [x] Render export jobs directly from original source clips.
 - [ ] Add export progress reporting and output file management.
 - [ ] Handle partial-footage edge cases without invalidating the full export.
 
@@ -81,6 +86,7 @@ This file tracks the delivery plan for SentryManager as discrete implementation 
 - [x] Split page-specific JavaScript so the index and player only load their own modules plus shared helpers.
 - [x] Split player-side JavaScript into entry, event, viewer-delete, and media helper modules.
 - [x] Split page-specific CSS so the index and player only load their own styles on top of shared base styles.
+- [x] Add browser-versus-export render snapshot regression coverage for telemetry overlays using real `SavedClips` fixtures.
 - [ ] Add structured logging for discovery, telemetry extraction, editing, and export jobs.
 - [ ] Add automated tests for discovery, playlist building, telemetry decoding, timeline normalization, and render-plan generation.
 - [ ] Add health checks and failure reporting for stack deployment.

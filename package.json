@@ -1,0 +1,10 @@
+{
+  "name": "sentrymanager-test-tools",
+  "private": true,
+  "scripts": {
+    "test:render-snapshots": "playwright test tests/render_snapshot.spec.js --reporter=line"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1"
+  }
+}

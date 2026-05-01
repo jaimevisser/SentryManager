@@ -43,6 +43,9 @@ export function initEventPlayer() {
     const playerDownloadUrl = typeof playlistConfig?.playerDownloadUrl === "string"
         ? playlistConfig.playerDownloadUrl
         : null;
+    const initialRenderJob = playlistConfig?.activeRenderJob && typeof playlistConfig.activeRenderJob === "object"
+        ? playlistConfig.activeRenderJob
+        : null;
     const eventFlags = playlistConfig?.eventFlags;
     const eventHasAutopilotActivity = Boolean(eventFlags?.hasAutopilotActivity);
     const eventHasSteeringAngleData = Boolean(eventFlags?.hasSteeringAngleData);
@@ -152,8 +155,12 @@ export function initEventPlayer() {
     let pendingPlayerEditsSnapshot = null;
     let persistedPlayerEditsSignature = null;
     let savedPlayerEditsHydrated = false;
-    let renderInFlight = false;
-    let renderStatusMessage = playlistConfig?.latestRender ? "Ready" : "";
+    let activeRenderJob = initialRenderJob;
+    let renderPollTimer = null;
+    let renderInFlight = isRenderJobActive(activeRenderJob);
+    let renderStatusMessage = activeRenderJob
+        ? getRenderJobStatusMessage(activeRenderJob)
+        : (playlistConfig?.latestRender ? "Ready" : "");
     let latestRenderMetadata = playlistConfig?.latestRender && typeof playlistConfig.latestRender === "object"
         ? playlistConfig.latestRender
         : null;
@@ -351,14 +358,120 @@ export function initEventPlayer() {
         setRenderStatus(renderStatusMessage);
     }
 
+    function isRenderJobActive(job) {
+        return Boolean(job && (job.status === "queued" || job.status === "running"));
+    }
+
+    function getRenderJobStatusMessage(job) {
+        if (!job || typeof job !== "object") {
+            return latestRenderMetadata ? "Ready" : "";
+        }
+        if (job.status === "queued") {
+            return typeof job.progressMessage === "string" && job.progressMessage ? job.progressMessage : "Queued...";
+        }
+        if (job.status === "running") {
+            return typeof job.progressMessage === "string" && job.progressMessage ? job.progressMessage : "Rendering...";
+        }
+        if (job.status === "failed") {
+            return typeof job.errorMessage === "string" && job.errorMessage ? job.errorMessage : "Could not render export.";
+        }
+        return "Ready";
+    }
+
+    function clearRenderPollTimer() {
+        if (renderPollTimer === null) {
+            return;
+        }
+        window.clearTimeout(renderPollTimer);
+        renderPollTimer = null;
+    }
+
+    function scheduleRenderJobPoll(delayMs = 1000) {
+        clearRenderPollTimer();
+        renderPollTimer = window.setTimeout(() => {
+            renderPollTimer = null;
+            pollRenderJobStatus().catch(() => {});
+        }, delayMs);
+    }
+
+    function updateRenderTracking(nextJob) {
+        activeRenderJob = nextJob && typeof nextJob === "object" ? nextJob : null;
+        renderInFlight = isRenderJobActive(activeRenderJob);
+        if (activeRenderJob?.render && typeof activeRenderJob.render === "object") {
+            latestRenderMetadata = activeRenderJob.render;
+        }
+        renderStatusMessage = getRenderJobStatusMessage(activeRenderJob);
+        syncRenderUI();
+    }
+
+    async function pollRenderJobStatus() {
+        if (!activeRenderJob || typeof activeRenderJob.statusUrl !== "string") {
+            updateRenderTracking(null);
+            return;
+        }
+
+        try {
+            const response = await fetch(activeRenderJob.statusUrl, {
+                cache: "no-store",
+            });
+            const responsePayload = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(typeof responsePayload?.error === "string" ? responsePayload.error : "Could not fetch render status.");
+            }
+
+            const job = responsePayload?.job && typeof responsePayload.job === "object"
+                ? responsePayload.job
+                : null;
+            if (!job) {
+                throw new Error("Could not fetch render status.");
+            }
+
+            if (job.status === "succeeded") {
+                if (job.render && typeof job.render === "object") {
+                    latestRenderMetadata = job.render;
+                }
+                updateRenderTracking(null);
+                setRenderStatus("Ready");
+                syncRenderUI();
+                const downloadUrl = typeof job.downloadUrl === "string" ? job.downloadUrl : playerDownloadUrl;
+                if (downloadUrl) {
+                    window.location.assign(downloadUrl);
+                }
+                return;
+            }
+
+            if (job.status === "failed") {
+                updateRenderTracking(null);
+                setRenderStatus(getRenderJobStatusMessage(job));
+                syncRenderUI();
+                return;
+            }
+
+            updateRenderTracking(job);
+            if (isRenderJobActive(job)) {
+                scheduleRenderJobPoll();
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Could not fetch render status.";
+            setRenderStatus(message);
+            syncRenderUI();
+            if (isRenderJobActive(activeRenderJob)) {
+                scheduleRenderJobPoll(1500);
+            }
+        }
+    }
+
     async function handleRenderAction() {
         if (renderInFlight || !playerRenderUrl) {
             return;
         }
 
-        renderInFlight = true;
-        setRenderStatus("Rendering...");
-        syncRenderUI();
+        clearRenderPollTimer();
+        updateRenderTracking({
+            status: "running",
+            statusUrl: null,
+            progressMessage: "Queueing...",
+        });
 
         try {
             const response = await fetch(playerRenderUrl, {
@@ -376,23 +489,33 @@ export function initEventPlayer() {
                 throw new Error(typeof responsePayload?.error === "string" ? responsePayload.error : "Could not render export.");
             }
 
-            latestRenderMetadata = responsePayload?.render && typeof responsePayload.render === "object"
-                ? responsePayload.render
-                : { status: "succeeded" };
+            const job = responsePayload?.job && typeof responsePayload.job === "object"
+                ? responsePayload.job
+                : null;
+            if (!job) {
+                throw new Error("Could not queue render export.");
+            }
+
+            updateRenderTracking(job);
+            if (isRenderJobActive(job)) {
+                scheduleRenderJobPoll(250);
+                return;
+            }
+
+            if (job.render && typeof job.render === "object") {
+                latestRenderMetadata = job.render;
+            }
+            const downloadUrl = typeof job.downloadUrl === "string" ? job.downloadUrl : playerDownloadUrl;
             setRenderStatus("Ready");
             syncRenderUI();
-            if (playerDownloadUrl) {
-                window.location.assign(playerDownloadUrl);
+            if (downloadUrl) {
+                window.location.assign(downloadUrl);
             }
         } catch (error) {
-            latestRenderMetadata = latestRenderMetadata && typeof latestRenderMetadata === "object"
-                ? latestRenderMetadata
-                : null;
+            updateRenderTracking(null);
             setRenderStatus(error instanceof Error ? error.message : "Could not render export.");
-            console.error(error instanceof Error ? error.message : "Could not render export.");
-        } finally {
-            renderInFlight = false;
             syncRenderUI();
+            console.error(error instanceof Error ? error.message : "Could not render export.");
         }
     }
 
@@ -2637,5 +2760,9 @@ export function initEventPlayer() {
 
     syncTimelineUI();
     scheduleStageSafeZoneUpdate();
+
+    if (isRenderJobActive(activeRenderJob)) {
+        scheduleRenderJobPoll(250);
+    }
 }
 
