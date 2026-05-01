@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from app.renderer.pipeline import build_render_plan, get_normalized_edit_segments
+from PIL import Image, ImageDraw
+
+from app.renderer.pipeline import _draw_heading_cell, _get_layout_slot_specs, build_render_plan, get_normalized_edit_segments
 
 
 class RendererPipelineTests(unittest.TestCase):
@@ -173,6 +176,12 @@ class RendererPipelineTests(unittest.TestCase):
         self.assertEqual((320, 720, 640, 360), (left_slot["x"], left_slot["y"], left_slot["width"], left_slot["height"]))
         self.assertEqual((960, 720, 640, 360), (right_slot["x"], right_slot["y"], right_slot["width"], right_slot["height"]))
 
+    def test_double_layout_slots_use_even_widths(self) -> None:
+        left_slot, right_slot = _get_layout_slot_specs("double", "front", 1920, 1080)
+
+        self.assertEqual((14, 0, 940, 1080), (left_slot["x"], left_slot["y"], left_slot["width"], left_slot["height"]))
+        self.assertEqual((964, 0, 942, 1080), (right_slot["x"], right_slot["y"], right_slot["width"], right_slot["height"]))
+
     def test_build_render_plan_uses_cumulative_playlist_timing(self) -> None:
         player_edits = {
             "trimStartTime": 59.4,
@@ -215,6 +224,40 @@ class RendererPipelineTests(unittest.TestCase):
         self.assertTrue(slot["fragments"][0]["sourceClip"].endswith("/2026-03-28_09-01-00-front.mp4"))
         self.assertEqual(0.4, slot["fragments"][0]["sourceIn"])
         self.assertEqual(1.4, slot["fragments"][0]["sourceOut"])
+
+    def test_load_svg_icon_scales_up_to_requested_target_size(self) -> None:
+        png_buffer = io.BytesIO()
+        Image.new("RGBA", (24, 24), (255, 255, 255, 255)).save(png_buffer, format="PNG")
+
+        with patch.dict("app.renderer.pipeline.SVG_ICON_CACHE", {}, clear=True):
+            with patch(
+                "app.renderer.pipeline.subprocess.run",
+                return_value=unittest.mock.Mock(returncode=0, stdout=png_buffer.getvalue()),
+            ):
+                from app.renderer.pipeline import _load_svg_icon
+
+                icon = _load_svg_icon("navigation.svg", 40)
+
+        self.assertIsNotNone(icon)
+        self.assertEqual((40, 40), icon.size)
+
+    def test_draw_heading_cell_uses_full_safe_zone_scale(self) -> None:
+        image = Image.new("RGBA", (126, 235), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+
+        rendered = _draw_heading_cell(
+            image,
+            draw,
+            (10, 60, 116, 110),
+            (0, 0, 126, 235),
+            {"headingLabel": "W", "headingDegrees": 270},
+        )
+
+        self.assertTrue(rendered)
+        alpha_bounds = image.getchannel("A").getbbox()
+        self.assertIsNotNone(alpha_bounds)
+        self.assertGreaterEqual(alpha_bounds[2] - alpha_bounds[0], 24)
+        self.assertGreaterEqual(alpha_bounds[3] - alpha_bounds[1], 24)
 
 
 if __name__ == "__main__":

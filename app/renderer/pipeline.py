@@ -56,13 +56,15 @@ BRAKE_FLAG_MASK = 0x04
 BASE_RENDER_WIDTH = 1920
 STAGE_PADDING_AT_BASE_WIDTH = 14.0
 DOUBLE_LAYOUT_GAP_AT_BASE_WIDTH = 10.0
+FRONTEND_ASSET_ROOT = Path(__file__).resolve().parent.parent / "frontend" / "static"
 FONT_CANDIDATES = (
+    str(FRONTEND_ASSET_ROOT / "fonts" / "tektur-latin.woff2"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
 )
-MDI_ASSET_ROOT = Path(__file__).resolve().parent.parent / "frontend" / "static" / "mdi"
-TELEMETRY_COLOR = (240, 248, 255, 245)
-TELEMETRY_SHADOW = (0, 0, 0, 220)
+MDI_ASSET_ROOT = FRONTEND_ASSET_ROOT / "mdi"
+TELEMETRY_COLOR = (246, 251, 255, 255)
+TELEMETRY_SHADOW = (0, 0, 0, 160)
 AUTOPILOT_ACTIVE_COLOR = (94, 169, 255, 245)
 HEADING_LABEL_COLOR = (0, 0, 0, 224)
 ICON_SHADOW_COLOR = (0, 0, 0, 170)
@@ -583,8 +585,7 @@ def _get_layout_slot_specs(layout: str, primary_camera: str, frame_width: int, f
             "height": frame_height,
         }]
     if layout == "double":
-        left_width = max(0, (usable_width - double_gap) // 2)
-        right_width = max(0, usable_width - double_gap - left_width)
+        left_width, right_width = _split_even_slot_widths(max(0, usable_width - double_gap))
         return [
             {
                 "camera": visible_cameras[0],
@@ -982,7 +983,7 @@ def _draw_left_safe_zone(
             _draw_centered_text(draw, cells[0], "<", _fit_font(cells[0], 0.7))
         rendered = True
     if sample and sample["headingLabel"]:
-        if not _draw_heading_cell(image, draw, cells[1], sample):
+        if not _draw_heading_cell(image, draw, cells[1], rect, sample):
             _draw_centered_text(draw, cells[1], str(sample["headingLabel"]), _fit_safe_zone_text_font(rect, 0.10, 0.10))
         rendered = True
     if sample and sample["brakeOn"]:
@@ -1026,11 +1027,13 @@ def _draw_right_safe_zone(
             )
         rendered = True
     if event_fsd_on_percent is not None:
+        fsd_font = _fit_safe_zone_text_font(rect, 0.10, 0.088)
         _draw_centered_text(
             draw,
             cells[3],
             f"FSD {round(event_fsd_on_percent)}%",
-            _fit_safe_zone_text_font(rect, 0.10, 0.088),
+            fsd_font,
+            letter_spacing=_get_text_letter_spacing(fsd_font, 0.08),
         )
         rendered = True
     return rendered
@@ -1039,14 +1042,15 @@ def _draw_right_safe_zone(
 def _draw_heading_cell(
     image: Image.Image,
     draw: ImageDraw.ImageDraw,
-    rect: tuple[float, float, float, float],
+    cell_rect: tuple[float, float, float, float],
+    zone_rect: tuple[float, float, float, float],
     sample: dict[str, object],
 ) -> bool:
     heading_label = sample.get("headingLabel")
     if not isinstance(heading_label, str) or not heading_label:
         return False
-    left, top, right, bottom = rect
-    indicator_size = _get_safe_zone_icon_size(rect, emphasized=False)
+    left, top, right, bottom = cell_rect
+    indicator_size = _get_safe_zone_icon_size(zone_rect, emphasized=False)
     indicator_left = left + ((right - left - indicator_size) / 2)
     indicator_top = top + ((bottom - top - indicator_size) / 2)
     indicator_rect = (
@@ -1067,7 +1071,7 @@ def _draw_heading_cell(
         draw,
         indicator_rect,
         heading_label,
-        _fit_safe_zone_text_font(rect, 0.10, 0.10),
+        _fit_safe_zone_text_font(zone_rect, 0.10, 0.10),
         fill=HEADING_LABEL_COLOR,
         shadow=False,
     )
@@ -1115,6 +1119,10 @@ def _fit_safe_zone_text_font(
     width = max(0.0, right - left)
     height = max(0.0, bottom - top)
     font_size = max(10, int(round(min(width * width_ratio, height * height_ratio))))
+    return _load_font(font_size)
+
+
+def _load_font(font_size: int) -> ImageFont.ImageFont:
     for font_path in FONT_CANDIDATES:
         if Path(font_path).is_file():
             try:
@@ -1132,34 +1140,32 @@ def _draw_speed_value(
 ) -> None:
     number_font = _fit_safe_zone_text_font(zone_rect, 0.14, 0.11)
     unit_font = _fit_safe_zone_text_font(zone_rect, 0.08, 0.07)
+    unit_letter_spacing = _get_text_letter_spacing(unit_font, 0.04)
     gap = max(4, int(round((zone_rect[2] - zone_rect[0]) * 0.015)))
     number_text = str(speed_value)
     unit_text = "km/h"
     number_bbox = draw.textbbox((0, 0), number_text, font=number_font)
-    unit_bbox = draw.textbbox((0, 0), unit_text, font=unit_font)
+    unit_width, unit_height = _measure_tracked_text(draw, unit_text, unit_font, unit_letter_spacing)
     number_width = number_bbox[2] - number_bbox[0]
     number_height = number_bbox[3] - number_bbox[1]
-    unit_width = unit_bbox[2] - unit_bbox[0]
-    unit_height = unit_bbox[3] - unit_bbox[1]
     total_width = number_width + gap + unit_width
     left, top, right, bottom = rect
     if total_width > (right - left) * 0.95:
         scale = ((right - left) * 0.95) / total_width
         number_font = _fit_safe_zone_text_font(zone_rect, 0.14 * scale, 0.11 * scale)
         unit_font = _fit_safe_zone_text_font(zone_rect, 0.08 * scale, 0.07 * scale)
+        unit_letter_spacing = _get_text_letter_spacing(unit_font, 0.04)
         number_bbox = draw.textbbox((0, 0), number_text, font=number_font)
-        unit_bbox = draw.textbbox((0, 0), unit_text, font=unit_font)
+        unit_width, unit_height = _measure_tracked_text(draw, unit_text, unit_font, unit_letter_spacing)
         number_width = number_bbox[2] - number_bbox[0]
         number_height = number_bbox[3] - number_bbox[1]
-        unit_width = unit_bbox[2] - unit_bbox[0]
-        unit_height = unit_bbox[3] - unit_bbox[1]
         total_width = number_width + gap + unit_width
     baseline_height = max(number_height, unit_height)
     x = int(round(left + ((right - left - total_width) / 2)))
     number_y = int(round(top + ((bottom - top - number_height) / 2)))
     unit_y = int(round(top + ((bottom - top - baseline_height) / 2) + (baseline_height - unit_height)))
     _draw_text_with_shadow(draw, (x, number_y), number_text, number_font)
-    _draw_text_with_shadow(draw, (x + number_width + gap, unit_y), unit_text, unit_font)
+    _draw_text_with_shadow(draw, (x + number_width + gap, unit_y), unit_text, unit_font, letter_spacing=unit_letter_spacing)
 
 
 def _load_svg_icon(icon_name: str, target_size: int) -> Image.Image | None:
@@ -1181,6 +1187,8 @@ def _load_svg_icon(icon_name: str, target_size: int) -> Image.Image | None:
             "-y",
             "-i",
             str(icon_path),
+            "-vf",
+            f"scale={target_size}:{target_size}:force_original_aspect_ratio=decrease:flags=lanczos",
             "-frames:v",
             "1",
             "-f",
@@ -1201,7 +1209,18 @@ def _load_svg_icon(icon_name: str, target_size: int) -> Image.Image | None:
         SVG_ICON_CACHE[cache_key] = None
         return None
 
-    icon.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+    largest_dimension = max(icon.width, icon.height)
+    if largest_dimension <= 0:
+        SVG_ICON_CACHE[cache_key] = None
+        return None
+
+    if largest_dimension != target_size:
+        scale = target_size / largest_dimension
+        resized_dimensions = (
+            max(1, int(round(icon.width * scale))),
+            max(1, int(round(icon.height * scale))),
+        )
+        icon = icon.resize(resized_dimensions, Image.Resampling.LANCZOS)
     SVG_ICON_CACHE[cache_key] = icon
     return icon.copy()
 
@@ -1213,17 +1232,19 @@ def _draw_centered_text(
     font: ImageFont.ImageFont,
     fill: tuple[int, int, int, int] = TELEMETRY_COLOR,
     shadow: bool = True,
+    letter_spacing: float = 0.0,
 ) -> None:
     left, top, right, bottom = rect
+    text_width, text_height = _measure_tracked_text(draw, text, font, letter_spacing)
     bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-    x = int(round(left + ((right - left - text_width) / 2)))
-    y = int(round(top + ((bottom - top - text_height) / 2)))
+    bbox_left = bbox[0]
+    bbox_top = bbox[1]
+    x = int(round(left + ((right - left - text_width) / 2) - bbox_left))
+    y = int(round(top + ((bottom - top - text_height) / 2) - bbox_top))
     if shadow:
-        _draw_text_with_shadow(draw, (x, y), text, font, fill=fill)
+        _draw_text_with_shadow(draw, (x, y), text, font, fill=fill, letter_spacing=letter_spacing)
         return
-    draw.text((x, y), text, font=font, fill=fill)
+    _draw_tracked_text(draw, (x, y), text, font, fill=fill, letter_spacing=letter_spacing)
 
 
 def _draw_text_with_shadow(
@@ -1232,24 +1253,79 @@ def _draw_text_with_shadow(
     text: str,
     font: ImageFont.ImageFont,
     fill: tuple[int, int, int, int] = TELEMETRY_COLOR,
+    letter_spacing: float = 0.0,
 ) -> None:
     x, y = xy
-    shadow_offsets = ((1, 1), (1, 0), (0, 1))
+    shadow_offsets = (
+        (-2, 0),
+        (-1, -1),
+        (-1, 0),
+        (-1, 1),
+        (0, -2),
+        (0, -1),
+        (0, 1),
+        (0, 2),
+        (1, -1),
+        (1, 0),
+        (1, 1),
+        (2, 0),
+    )
     for shadow_x, shadow_y in shadow_offsets:
-        draw.text((x + shadow_x, y + shadow_y), text, font=font, fill=TELEMETRY_SHADOW)
-    draw.text((x, y), text, font=font, fill=fill)
+        _draw_tracked_text(draw, (x + shadow_x, y + shadow_y), text, font, fill=TELEMETRY_SHADOW, letter_spacing=letter_spacing)
+    _draw_tracked_text(draw, (x, y), text, font, fill=fill, letter_spacing=letter_spacing)
+    _draw_tracked_text(draw, (x, y), text, font, fill=fill, letter_spacing=letter_spacing)
+
+
+
+
+def _draw_tracked_text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[int, int],
+    text: str,
+    font: ImageFont.ImageFont,
+    fill: tuple[int, int, int, int],
+    letter_spacing: float = 0.0,
+) -> None:
+    x, y = xy
+    cursor_x = float(x)
+    for index, character in enumerate(text):
+        draw.text((cursor_x, y), character, font=font, fill=fill)
+        cursor_x += _get_character_advance(font, character)
+        if index < len(text) - 1:
+            cursor_x += letter_spacing
+
+
+def _measure_tracked_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.ImageFont,
+    letter_spacing: float = 0.0,
+) -> tuple[int, int]:
+    if not text:
+        return (0, 0)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_height = bbox[3] - bbox[1]
+    text_width = int(round(sum(_get_character_advance(font, character) for character in text)))
+    text_width += int(round(letter_spacing * max(0, len(text) - 1)))
+    return (text_width, text_height)
+
+
+def _get_character_advance(font: ImageFont.ImageFont, character: str) -> float:
+    if hasattr(font, "getlength"):
+        return float(font.getlength(character))
+    bbox = font.getbbox(character)
+    return float(bbox[2] - bbox[0])
+
+
+def _get_text_letter_spacing(font: ImageFont.ImageFont, em_ratio: float) -> float:
+    size = getattr(font, "size", 12)
+    return float(size) * em_ratio
 
 
 def _fit_font(rect: tuple[float, float, float, float], height_ratio: float) -> ImageFont.ImageFont:
     _, top, _, bottom = rect
     font_size = max(12, int(round((bottom - top) * height_ratio)))
-    for font_path in FONT_CANDIDATES:
-        if Path(font_path).is_file():
-            try:
-                return ImageFont.truetype(font_path, size=font_size)
-            except OSError:
-                continue
-    return ImageFont.load_default()
+    return _load_font(font_size)
 
 
 def _get_safe_zone_cells(rect: tuple[float, float, float, float]) -> list[tuple[float, float, float, float]]:
@@ -1582,6 +1658,19 @@ def _get_compass_direction_label(heading_degrees: float) -> str:
 
 def _scale_stage_pixels(base_pixels: float, frame_width: int | float) -> int:
     return max(0, int(round(base_pixels * (float(frame_width) / BASE_RENDER_WIDTH))))
+
+
+def _split_even_slot_widths(total_width: int) -> tuple[int, int]:
+    left_width = max(0, total_width // 2)
+    right_width = max(0, total_width - left_width)
+    left_width -= left_width % 2
+    right_width -= right_width % 2
+
+    remaining_width = max(0, total_width - left_width - right_width)
+    if remaining_width >= 2:
+        right_width += remaining_width - (remaining_width % 2)
+
+    return left_width, right_width
 
 
 def _run_ffmpeg(command: list[str]) -> None:

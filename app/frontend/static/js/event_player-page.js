@@ -367,15 +367,29 @@ export function initEventPlayer() {
             return latestRenderMetadata ? "Ready" : "";
         }
         if (job.status === "queued") {
-            return typeof job.progressMessage === "string" && job.progressMessage ? job.progressMessage : "Queued...";
+            return formatRenderStatusMessage(job.progressMessage, "Queued...");
         }
         if (job.status === "running") {
-            return typeof job.progressMessage === "string" && job.progressMessage ? job.progressMessage : "Rendering...";
+            return formatRenderStatusMessage(job.progressMessage, "Rendering...");
         }
         if (job.status === "failed") {
-            return typeof job.errorMessage === "string" && job.errorMessage ? job.errorMessage : "Could not render export.";
+            return formatRenderStatusMessage(job.errorMessage, "Could not render export.");
         }
         return "Ready";
+    }
+
+    function formatRenderStatusMessage(message, fallbackMessage) {
+        if (typeof message !== "string") {
+            return fallbackMessage;
+        }
+        const compactMessage = message.replace(/\s+/g, " ").trim();
+        if (!compactMessage) {
+            return fallbackMessage;
+        }
+        if (compactMessage.length <= 180) {
+            return compactMessage;
+        }
+        return `${compactMessage.slice(0, 179).trimEnd()}...`;
     }
 
     function clearRenderPollTimer() {

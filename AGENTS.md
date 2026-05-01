@@ -8,25 +8,30 @@
 ## Defaults
 
 - Prefer CLI and direct source edits over ad hoc terminal rewrites.
-- Prefer non-interactive commands; avoid prompts.
+- Prefer non-interactive commands.
 - For Markdown and config, on-disk state is the source of truth.
-- Keep the app server-rendered unless client-side complexity is needed.
+- Keep the app server-rendered unless client complexity is needed.
+- If the human does something dumb, say so.
 
 ## Commit/Push
 
 - Never commit or push unless explicitly told this session.
-- `commit`: don't push.
+- `commit`: commit only.
 - `push`: commit, then push.
-- For commit-only or push-only requests: run only required git commands; don't inspect binaries or media unless asked; don't broadly scan the repo for purely operational git work; if commit scope is ambiguous, ask one concise question.
+- For commit-only or push-only requests, run only the needed git commands. Don't inspect binaries or media unless asked. Don't broadly scan the repo for operational git work. If scope is ambiguous, ask one concise question.
 
 ## Validation
 
 - For Python or template changes, prefer the narrowest useful validation first.
 - For visual app HTML/CSS/template changes, always run `docker compose up -d --build app` before handing work back so the user can review the live result.
 - Baseline: `python -m compileall app`, `docker compose config`, `docker build -t sentrymanager .`
-- Add targeted automated tests as ingest, editing, and export code lands.
+- Add targeted automated tests as ingest, editing, and export code land.
 
 ## Housekeeping
 
 - Update [TODO.md](TODO.md) after meaningful completions.
-- Add durable project-specific commands or conventions here when learned.
+- Keep md files terse, clear, and high-density.
+- Use the `tersify` skill for documentation, markdown notes, handoff text, and other prose-heavy repo files.
+- Keep [diary.md](diary.md) up to date whenever you do something meaningful or learn something durable about the repo; use it as the running work diary and handoff log.
+- Do not use [TODO.md](TODO.md) as a diary; keep narrative notes, handoff context, and learned behavior in [diary.md](diary.md).
+- Add durable project-specific commands and conventions here when learned.

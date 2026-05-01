@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import re
 import uuid
 from pathlib import Path
 
@@ -119,13 +120,14 @@ def mark_render_job_failed(
     job_id: str,
     error_message: str,
 ) -> dict[str, object] | None:
+    summarized_error = _summarize_error_message(error_message)
     return _transition_job(
         footage_root,
         job_id,
         next_status="failed",
-        progress_message=error_message,
+        progress_message=summarized_error,
         render_metadata=None,
-        error_message=error_message,
+        error_message=summarized_error,
     )
 
 
@@ -209,3 +211,80 @@ def _write_job_file(job_path: Path, job: dict[str, object]) -> None:
         json.dumps(job, ensure_ascii=True, separators=(",", ":")),
         encoding="utf-8",
     )
+
+
+def _summarize_error_message(error_message: str) -> str:
+    fallback_message = "Could not render export."
+    if not isinstance(error_message, str):
+        return fallback_message
+
+    candidate_lines: list[str] = []
+    for raw_line in error_message.splitlines():
+        compact_line = re.sub(r"\s+", " ", raw_line).strip()
+        if not compact_line:
+            continue
+        compact_line = compact_line.strip("\"'")
+        compact_line = re.sub(r"^(?:\[[^\]]+\]\s*)+", "", compact_line)
+        if _is_error_noise_line(compact_line):
+            continue
+        candidate_lines.append(compact_line)
+
+    if not candidate_lines:
+        compact_message = re.sub(r"\s+", " ", error_message).strip()
+        return _truncate_error_message(compact_message or fallback_message)
+
+    preferred_lines = [
+        line
+        for line in candidate_lines
+        if any(
+            hint in line.lower()
+            for hint in (
+                "cannot",
+                "could not",
+                "invalid",
+                "nothing was written",
+                "no packets",
+                "failed",
+                "missing",
+                "error",
+            )
+        )
+        and line.lower() not in {"conversion failed!", "ffmpeg failed"}
+    ]
+    selected_line = preferred_lines[0] if preferred_lines else candidate_lines[-1]
+    return _truncate_error_message(selected_line)
+
+
+def _is_error_noise_line(line: str) -> bool:
+    lower_line = line.lower()
+    return lower_line.startswith(
+        (
+            "ffmpeg version ",
+            "copyright ",
+            "built with ",
+            "configuration:",
+            "libavutil ",
+            "libavcodec ",
+            "libavformat ",
+            "libavdevice ",
+            "libavfilter ",
+            "libswscale ",
+            "libswresample ",
+            "input #",
+            "output #",
+            "metadata:",
+            "duration:",
+            "stream #",
+            "compatible_brands:",
+            "creation_time:",
+            "handler_name:",
+            "vendor_id:",
+            "press [q]",
+        )
+    )
+
+
+def _truncate_error_message(message: str, max_length: int = 180) -> str:
+    if len(message) <= max_length:
+        return message
+    return f"{message[: max_length - 1].rstrip()}..."

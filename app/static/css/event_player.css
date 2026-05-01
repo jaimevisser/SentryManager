@@ -233,6 +233,8 @@
 
 .player-safe-zone-text-compact {
     font-size: min(calc(var(--player-safe-zone-width, 0px) * 0.1), calc(var(--player-safe-zone-height, 0px) * 0.088));
+    color: #ffffff;
+    text-shadow: none;
 }
 
 .player-safe-zone-value {

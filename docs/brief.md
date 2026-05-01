@@ -22,6 +22,13 @@ The user wants to review a TeslaCam event without manually opening dozens of sho
 4. Mark timeline ranges and choose the camera view for each range.
 5. Export the result as one rendered video from the original clips.
 
+## Current Implementation
+
+- Event discovery, grouped browsing, and event detail playback are implemented.
+- The player supports synchronized single, double, and triple camera layouts plus telemetry-backed speed, blinker, brake, autopilot, and `fsdOnPercent` overlays.
+- Saved edits support trim handles, a start marker, and camera markers, then normalize into deterministic edit segments.
+- Exports run from original source clips through a worker-backed render pipeline, and browser-versus-export snapshot tests cover real `SavedClips` fixtures.
+
 ## Product Principles
 
 - Optimize for review speed over media-player completeness.
@@ -29,14 +36,20 @@ The user wants to review a TeslaCam event without manually opening dozens of sho
 - Keep timeline decisions deterministic so export output matches what the user selected.
 - Degrade gracefully when footage is missing for one or more angles.
 
-## Early UI Shape
+## UI Shape
 
-The application should eventually provide:
+The application provides:
 
 - an event browser
 - an event detail page with angle playback and timeline scrubbing
-- a segment editor for choosing angles or layouts over time
-- an export queue or export detail page
+- trim and camera-marker editing on the event timeline
+- export controls with job state in the player
+
+Planned additions:
+
+- richer segment editing for split, merge, retime, labels, notes, and playback-rate overrides
+- clearer missing-angle coverage surfacing
+- dedicated export progress and output management views
 
 ## Non-Goals For The First Iterations
 

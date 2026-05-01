@@ -1,93 +1,33 @@
 # TODO
 
-## Agent handoff
+This file tracks remaining delivery work. Implemented behavior belongs in the README and docs.
 
-- The repo now has a working Flask review app with a grouped event index, an event player, plain-JS playback controls, Docker/Compose wiring, typed config loading, and project docs.
-- Compose publishes the app on host port `8765`, mounts TeslaCam footage at `/data/TeslaCam`, and the container can write segment telemetry sidecars plus `sentrymanager.json` markers back into event folders.
-- Event discovery is broader than the original scaffold note implied: the index scans direct event folders plus one- and two-level TeslaCam layouts, caches in-memory summaries, and enriches cards from `event.json`, `thumb.png`, and `sentrymanager.json`.
-- The review UI already supports grouped browsing, event thumbnails, location/category chips, trigger-aware Sentry defaults, synchronized clip progression, composite camera views, and telemetry-backed speed/blinker/autopilot indicators.
-- The player now supports persisted trim handles, a saved start-marker view, and camera markers in each event's `sentrymanager.json`, but those edits are still stored as raw marker state rather than normalized timeline segments.
-- The Flask review app now lives under `app/frontend/`, with templates and static assets moved under that package, while render normalization and plan generation live under `app/renderer/`.
-- Saved player edits are now normalized into contiguous edit segments and written back into `sentrymanager.json` as `normalizedEditSegments`.
-- The renderer can now probe source clips with `ffprobe`, generate declarative render plans from normalized segments, and execute queued render jobs in the dedicated `worker` service via the file-backed job store under `.sentrymanager/render-jobs`.
-- `tests/test_renderer_pipeline.py` now covers edit-segment normalization plus render-plan generation across clip boundaries and missing-camera coverage without invoking `ffmpeg`.
-- The current app container now includes `ffmpeg`, and the queued worker-backed export plus latest-download flow has been validated end-to-end against `SavedClips/2026-03-28_09-12-13`.
-- Telemetry overlay positioning and sizing in rendered exports were revalidated against fresh frames for `SavedClips/2026-03-28_09-12-13`; the renderer now matches the browser's compact bottom-corner safe zones by using the same union-of-layouts safe-zone geometry, and the short validation clip's telemetry values are confirmed to be effectively constant in source data.
-- A Playwright render-snapshot regression suite now captures deterministic browser stage frames and compares them against backend export frames for left blinker, right blinker, brake, and blue-FSD fixtures taken from real `SavedClips` footage; the browser snapshot hook now waits for initial player seeks to settle before capture so the suite is stable.
+## Discovery And Ingest
 
-This file tracks the delivery plan for SentryManager as discrete implementation steps.
-
-## Phase 1: Foundation
-
-- [x] Create the initial Flask app structure with Jinja templates and static assets.
-- [x] Add Docker and Compose files with a mounted TeslaCam footage volume.
-- [x] Write the core project documentation and agent guidance.
-- [x] Add basic application configuration management for local, test, and production environments.
-
-## Phase 2: Discovery And Ingest
-
-- [x] Discover TeslaCam event directories from the root, category folders, and compatible nested layouts.
-- [x] Build in-memory event summaries from filenames, `event.json`, thumbnails, and `sentrymanager.json` markers.
-- [x] Group raw clips into angle-specific playlists for the review UI.
-- [x] Document upstream Tesla SEI metadata support and field inventory for compatible clips.
-- [x] Generate per-segment `-telemetry.sei.bin` sidecars in a frontend-ready binary format.
-- [x] Extract and use the clip metadata needed for review playback from filenames, browser media metadata, `event.json`, and telemetry sidecars.
-- [x] Record event-level `fsdOnPercent` in `sentrymanager.json` when SEI autopilot state metadata is available.
 - [ ] Persist normalized event, clip, and telemetry metadata in a local data store.
 - [ ] Represent missing-angle coverage explicitly in the normalized event model.
 
-## Phase 3: Review UI
+## Review UI
 
-- [x] Build an event browser that lists detected TeslaCam sessions.
-- [x] Group events by day and surface thumbnails, category chips, and location metadata when available.
-- [x] Choose a useful default Sentry view and initial playback offset from `event.json` trigger metadata when available.
-- [x] Show street and city metadata from `event.json` on event thumbnail tiles when available.
-- [x] Add an event player linked from the browser, with sequential clip playback and switchable camera views.
-- [x] Add synchronized multi-angle composite playback for front, rear, and side layouts when source clips exist.
-- [x] Implement scrub, jump, and clip-boundary handling on the master event timeline.
-- [x] Add long-press multi-select on event thumbnails with a header delete action.
-- [x] Add a header delete action to the event player with confirmation and index redirect.
-- [x] Load telemetry sidecars in the player and show speed plus driver-assist indicators during playback.
-- [x] Preserve full playback stage height by moving telemetry into stage-safe corner overlays.
-- [x] Add a steering-wheel autopilot indicator with white/blue active states backed by `sentrymanager.json` event metadata.
-- [x] Reserve a brake-indicator slot in the left stage-safe overlay and show it when brake-applied telemetry is active.
-- [x] Show event-level `fsdOnPercent` in the right stage-safe overlay during playback.
-- [x] Overlay a transparent 3x3 camera icon grid on the top-left of the main player image.
-- [x] Replace the old camera selector row with overlay-driven 1/2/3 camera layouts and camera-target arrows.
-- [x] Add export controls to the event player for starting an export from the current edit state.
-- [x] Surface export readiness, active-job state, and the latest output/error details in the event player UI.
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
 
-## Phase 4: Editing Model
+## Editing Model
 
-- [x] Add start/end trim marker UX shell with draggable handles, default range fill, and minimum-gap constraints.
-- [x] Add camera marker UX with per-marker layout/camera popup controls on the edit lane.
-- [x] Apply camera marker layout/camera selections live when playback crosses each marker.
-- [x] Add start-marker layout/camera selection so playback can begin in a saved perspective before the first camera marker.
-- [x] Persist player trim and camera markers in each event's `sentrymanager.json` and hydrate them on reload.
-- [x] Open the player at the saved trim start when a persisted start marker is present.
-- [x] Normalize the saved trim range, start-marker view, and camera markers into contiguous edit segments.
 - [ ] Show derived segment boundaries and active-segment selection on the event timeline.
 - [ ] Let users split, merge, and retime segments without rebuilding raw marker state by hand.
 - [ ] Add per-segment editing controls for labels, notes, and optional playback-rate overrides.
 
-## Phase 5: Export Pipeline
+## Export Pipeline
 
-- [ ] Make export composition match the browser stage rendering for trims, camera switches, multi-camera layouts, and stage-safe overlays.
-- [x] Convert normalized edit segments into an `ffmpeg` render plan.
+- [ ] Finish browser/export parity for trims, camera switches, multi-camera layouts, and stage-safe overlays.
 - [ ] Generate background-rendered telemetry corner overlay assets that can be stitched into the final export timeline.
 - [ ] Composite telemetry corner overlays with the source-camera layout render so exported video preserves the viewer telemetry treatment.
-- [x] Render export jobs directly from original source clips.
 - [ ] Add export progress reporting and output file management.
 - [ ] Handle partial-footage edge cases without invalidating the full export.
 
-## Phase 6: Operational Hardening
+## Operational Hardening
 
-- [x] Split page-specific JavaScript so the index and player only load their own modules plus shared helpers.
-- [x] Split player-side JavaScript into entry, event, viewer-delete, and media helper modules.
-- [x] Split page-specific CSS so the index and player only load their own styles on top of shared base styles.
-- [x] Add browser-versus-export render snapshot regression coverage for telemetry overlays using real `SavedClips` fixtures.
 - [ ] Add structured logging for discovery, telemetry extraction, editing, and export jobs.
-- [ ] Add automated tests for discovery, playlist building, telemetry decoding, timeline normalization, and render-plan generation.
+- [ ] Expand automated tests for discovery, playlist building, telemetry decoding, and remaining timeline/export paths.
 - [ ] Add health checks and failure reporting for stack deployment.
 - [ ] Document backup, retention, and storage expectations for footage, telemetry artifacts, and rendered exports.

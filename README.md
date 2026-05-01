@@ -4,7 +4,7 @@ SentryManager is a web application for reviewing Tesla dashcam and Sentry Mode f
 
 The current UI is desktop-only for now. Narrow-screen and mobile layouts are not supported yet.
 
-The project is designed around a Python backend that serves Jinja-rendered HTML plus static JavaScript and CSS. The browser handles review and editing workflows directly against the original event clips, while heavier media work such as indexing and final render orchestration will happen on the backend with tools such as `ffprobe` and `ffmpeg`.
+The project uses a Python backend that serves Jinja-rendered HTML plus static JavaScript and CSS. The browser handles review and editing directly against original event clips, while the backend handles discovery helpers, telemetry extraction, render-plan generation, and worker-backed exports via `ffprobe` and `ffmpeg`.
 
 ## Goals
 
@@ -14,22 +14,26 @@ The project is designed around a Python backend that serves Jinja-rendered HTML 
 - Export the final cut from the original footage.
 - Run cleanly inside a Docker-based stack with a mounted TeslaCam volume available to the container.
 
-## Current Scope
+## Current Functionality
 
-This initial scaffold provides:
+- Discover TeslaCam events from direct event folders plus compatible one- and two-level category layouts.
+- Build in-memory event summaries from filenames, `event.json`, thumbnails, telemetry sidecars, and `sentrymanager.json` markers.
+- Browse events by day with thumbnails, category chips, location metadata, and trigger-aware defaults.
+- Review synchronized source clips in single, double, and triple camera layouts with master-timeline scrubbing.
+- Show telemetry overlays for speed, blinkers, brake state, autopilot state, and event-level `fsdOnPercent`.
+- Persist trim handles, a saved start marker, and camera markers in `sentrymanager.json`, then normalize them into contiguous `normalizedEditSegments`.
+- Generate render plans from normalized edit segments and queue worker-backed export jobs that render directly from original source clips.
+- Surface export readiness, active job state, and latest output or failure details in the player.
+- Run browser-versus-export render-snapshot regression coverage against real `SavedClips` fixtures.
 
-- A Flask application with Jinja templates and static assets.
-- A landing page that surfaces the mounted TeslaCam root and a lightweight event summary.
-- A desktop-oriented review UI for browsing events and playing footage.
-- Project documentation for product direction, data model, and execution plan.
-- Docker and Compose files for local development and stack integration.
+## Still Missing
 
-It does not yet provide:
-
-- Persistent clip indexing.
-- Timeline editing.
-- Final export jobs.
-- Authentication or multi-user support.
+- Persistent normalized indexing beyond the current on-demand event summaries.
+- Timeline gap surfacing for missing camera coverage.
+- Higher-level segment editing such as split, merge, retime, labels, notes, and playback-rate overrides.
+- Full browser/export parity for every layout and overlay edge case.
+- Export progress reporting, storage management, structured logging, deployment health checks, and backup guidance.
+- Authentication and multi-user support.
 
 ## Architecture
 
@@ -38,23 +42,25 @@ It does not yet provide:
 - Python 3.12
 - Flask for HTTP routing and Jinja template rendering
 - Gunicorn as the production container entrypoint
-- Future media tooling via `ffprobe` and `ffmpeg`
+- `ffprobe` and `ffmpeg` for clip probing and export rendering
+- File-backed render jobs processed by the `worker` service
 
 ### Frontend
 
 - Server-rendered HTML templates
-- Plain JavaScript modules in `app/static/js`
-- Project CSS in `app/static/css`
+- Plain JavaScript modules in `app/frontend/static/js`
+- Project CSS in `app/frontend/static/css`
 
-### Media Workflow Direction
+### Media Workflow
 
-The intended workflow is:
+The current workflow is:
 
 1. Scan TeslaCam footage from a mounted volume.
 2. Group short source clips into events and camera-angle timelines.
-3. Review synchronized source clips directly in the browser.
-4. Let the user create edit decisions against the master event timeline.
-5. Translate those edit decisions onto original clips for final `ffmpeg` export.
+3. Generate telemetry sidecars and event markers as needed.
+4. Review synchronized source clips directly in the browser.
+5. Persist edit decisions in `sentrymanager.json` and normalize them into export segments.
+6. Generate a render plan and render the final cut from original clips.
 
 ## Repository Layout
 
@@ -69,18 +75,25 @@ The intended workflow is:
 ├── app/
 │   ├── __init__.py
 │   ├── config.py
+│   ├── frontend/
+│   │   ├── app.py
+│   │   ├── static/
+│   │   └── templates/
 │   ├── main.py
-│   ├── static/
-│   │   ├── css/common.css
-│   │   └── js/app.js
-│   └── templates/
-│       ├── base.html
-│       └── index.html
+│   └── renderer/
+│       ├── jobs.py
+│       ├── pipeline.py
+│       └── worker.py
 ├── docker-compose.yml
 ├── docs/
 │   ├── brief.md
 │   ├── data.md
+│   ├── rendering_plan.md
 │   └── sei-metadata.md
+├── tests/
+│   ├── render_snapshot.spec.js
+│   ├── test_renderer_jobs.py
+│   └── test_renderer_pipeline.py
 └── requirements.txt
 ```
 
@@ -91,19 +104,19 @@ The Compose file mounts these host folders into the container:
 - `./config` to `/app/config`
 - `./data/TeslaCam` to `/data/TeslaCam`
 
-`/data/TeslaCam` must be writable by the container so the app can store segment-level `-telemetry.sei.bin` files plus a `sentrymanager.json` processing marker inside event folders.
+`/data/TeslaCam` must be writable by the container so the app can store segment-level `-telemetry.sei.bin` files, `sentrymanager.json` processing data, render plans, and rendered exports inside event folders.
 
 ### Start the app
 
 ```bash
-TESLACAM_PATH=/absolute/path/to/TeslaCam docker compose up --build
+TESLACAM_PATH=/absolute/path/to/TeslaCam docker compose up --build app worker
 ```
 
 The app will then be available at `http://localhost:8765`.
 
 If you do not set `TESLACAM_PATH`, Compose falls back to `./data/TeslaCam`.
 
-### Stop the app
+### Stop the stack
 
 ```bash
 docker compose down
@@ -139,9 +152,9 @@ If a YAML key is omitted, the matching environment variable is used as a fallbac
 
 ## TeslaCam Assumptions
 
-The project assumes footage arrives as many short MP4 clips organized by event or by TeslaCam category folders such as `SavedClips`, `SentryClips`, or similar structures.
+The project assumes footage arrives as many short MP4 clips organized by event folders or TeslaCam category folders such as `SavedClips` and `SentryClips`, including compatible nested layouts.
 
-The starter page performs only a shallow summary so the app can boot against real footage without requiring the ingest pipeline to be complete.
+The current app discovers events on demand and keeps summaries in memory rather than in a persistent index.
 
 ## Development Notes
 
@@ -162,5 +175,5 @@ docker build -t sentrymanager .
 ## Related Docs
 
 - `docs/brief.md`: product scope and user workflow
-- `docs/data.md`: initial data model and render concepts
-- `TODO.md`: delivery plan in discrete steps
+- `docs/data.md`: current persisted artifacts plus core data model terms
+- `TODO.md`: remaining delivery work
