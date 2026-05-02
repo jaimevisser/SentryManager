@@ -4,6 +4,11 @@ import {
     populateClipDurations,
 } from "./event_player-media.js";
 import {
+    createPreloadPlayers,
+    loadEventPlayerBootstrap,
+    queryEventPlayerNodes,
+} from "./event_player-page-bootstrap.js";
+import {
     getRenderJobStatusMessage as describeRenderJobStatus,
     getSecondaryCameraKeyMapForSelection as getSecondaryCameraKeyMapForSelectionHelper,
     getVisibleCameraKeysForSelection as getVisibleCameraKeysForSelectionHelper,
@@ -20,53 +25,27 @@ import { createEventPlayerSnapshotApi } from "./event_player-page-snapshot.js";
 import { createStageSafeZoneController } from "./event_player-page-stage.js";
 
 export function initEventPlayer() {
-    const player = document.querySelector("[data-event-player]");
-    const playlistNode = document.getElementById("event-playlist");
-    if (!player || !playlistNode) {
+    const bootstrap = loadEventPlayerBootstrap(document, normalizeDriverAssistDisplay);
+    if (!bootstrap) {
         return;
     }
 
-    let playlistConfig;
-    try {
-        playlistConfig = JSON.parse(playlistNode.textContent || "{}");
-    } catch {
-        return;
-    }
-
-    const allPlaylists = playlistConfig?.playlists;
-    const defaultViewKey = playlistConfig?.defaultViewKey;
-    const rawEventMarkerTime = playlistConfig?.eventMarkerTime;
-    const rawInitialStartTime = playlistConfig?.initialStartTime;
-    const rawSavedEdits = playlistConfig?.savedEdits;
-    const playerEditsSaveUrl = typeof playlistConfig?.playerEditsSaveUrl === "string"
-        ? playlistConfig.playerEditsSaveUrl
-        : null;
-    const playerRenderUrl = typeof playlistConfig?.playerRenderUrl === "string"
-        ? playlistConfig.playerRenderUrl
-        : null;
-    const playerDownloadUrl = typeof playlistConfig?.playerDownloadUrl === "string"
-        ? playlistConfig.playerDownloadUrl
-        : null;
-    const initialRenderJob = playlistConfig?.activeRenderJob && typeof playlistConfig.activeRenderJob === "object"
-        ? playlistConfig.activeRenderJob
-        : null;
-    const latestRenderMetadata = playlistConfig?.latestRender && typeof playlistConfig.latestRender === "object"
-        ? playlistConfig.latestRender
-        : null;
-    const eventFlags = playlistConfig?.eventFlags;
-    const eventHasAutopilotActivity = Boolean(eventFlags?.hasAutopilotActivity);
-    const eventHasSteeringAngleData = Boolean(eventFlags?.hasSteeringAngleData);
-    const rawDriverAssistDisplay = eventFlags?.driverAssistDisplay;
-    const eventDriverAssistDisplay = normalizeDriverAssistDisplay(rawDriverAssistDisplay);
-    const eventMarkerTime = typeof rawEventMarkerTime === "number" && Number.isFinite(rawEventMarkerTime)
-        ? rawEventMarkerTime
-        : null;
-    const initialStartTime = typeof rawInitialStartTime === "number" && Number.isFinite(rawInitialStartTime)
-        ? Math.max(0, rawInitialStartTime)
-        : 0;
-    if (!allPlaylists || typeof allPlaylists !== "object" || !defaultViewKey) {
-        return;
-    }
+    const {
+        allPlaylists,
+        defaultViewKey,
+        eventDriverAssistDisplay,
+        eventHasAutopilotActivity,
+        eventHasSteeringAngleData,
+        eventMarkerTime,
+        initialRenderJob,
+        initialStartTime,
+        latestRenderMetadata,
+        player,
+        playerDownloadUrl,
+        playerEditsSaveUrl,
+        playerRenderUrl,
+        rawSavedEdits,
+    } = bootstrap;
 
     let activeLayout = "single";
     let activeCameraKey = hasCameraPlaylist(defaultViewKey)
@@ -77,51 +56,43 @@ export function initEventPlayer() {
         return;
     }
 
-    const currentTimeNode = document.querySelector("[data-player-current-time]");
-    const totalTimeNode = document.querySelector("[data-player-total-time]");
-    const speedNode = document.querySelector("[data-player-speed]");
-    const blinkerLeftNode = document.querySelector("[data-player-blinker-left]");
-    const headingIndicatorNode = document.querySelector("[data-player-heading-indicator]");
-    const headingNode = document.querySelector("[data-player-heading]");
-    const headingLabelNode = document.querySelector("[data-player-heading-label]");
-    const autopilotNode = document.querySelector("[data-player-autopilot]");
-    const brakeNode = document.querySelector("[data-player-brake]");
-    const blinkerRightNode = document.querySelector("[data-player-blinker-right]");
-    const fsdPercentNode = document.querySelector("[data-player-fsd-percent]");
-    const scrubber = document.querySelector("[data-player-scrub]");
-    const eventMarker = document.querySelector("[data-player-event-marker]");
-    const editTrack = document.querySelector("[data-player-edit-track]");
-    const editTrackFill = document.querySelector("[data-player-edit-fill]");
-    const startMarkerButton = document.querySelector("[data-player-start-marker]");
-    const endMarkerButton = document.querySelector("[data-player-end-marker]");
-    const setStartButton = document.querySelector("[data-player-set-start]");
-    const setEndButton = document.querySelector("[data-player-set-end]");
-    const addCameraMarkerButton = document.querySelector("[data-player-add-camera-marker]");
-    const exportFormatToggle = document.querySelector(".player-export-format-toggle");
-    const exportFormatButtons = Array.from(document.querySelectorAll("[data-export-format-option]"));
-    const renderActionButton = document.querySelector("[data-player-render-action]");
-    const renderActionIcon = document.querySelector("[data-player-render-action-icon]");
-    const downloadActionButton = document.querySelector("[data-player-download-action]");
-    const renderStatusNode = document.querySelector("[data-player-render-status]");
-    const toggleButton = document.querySelector("[data-player-toggle]");
-    const toggleIcon = document.querySelector("[data-player-toggle-icon]");
-    const layoutButtons = Array.from(document.querySelectorAll("[data-layout-option]"));
-    const cameraButtons = Array.from(document.querySelectorAll("[data-camera-target]"));
-    const stageSurface = document.querySelector("[data-player-stage-surface]");
-    const viewFrame = document.querySelector("[data-player-view-frame]");
-    const stageSafeZones = {
-        left: document.querySelector('[data-player-safe-zone="left"]'),
-        right: document.querySelector('[data-player-safe-zone="right"]'),
-    };
-    const secondaryPlayers = {
-        left: document.querySelector('[data-secondary-slot="left"]'),
-        right: document.querySelector('[data-secondary-slot="right"]'),
-    };
-    const preloadPlayers = {
-        master: document.createElement("video"),
-        left: document.createElement("video"),
-        right: document.createElement("video"),
-    };
+    const {
+        addCameraMarkerButton,
+        autopilotNode,
+        blinkerLeftNode,
+        blinkerRightNode,
+        cameraButtons,
+        currentTimeNode,
+        downloadActionButton,
+        editTrack,
+        editTrackFill,
+        endMarkerButton,
+        eventMarker,
+        exportFormatButtons,
+        exportFormatToggle,
+        fsdPercentNode,
+        headingIndicatorNode,
+        headingLabelNode,
+        headingNode,
+        layoutButtons,
+        renderActionButton,
+        renderActionIcon,
+        renderStatusNode,
+        scrubber,
+        secondaryPlayers,
+        setEndButton,
+        setStartButton,
+        speedNode,
+        stageSafeZones,
+        stageSurface,
+        startMarkerButton,
+        toggleButton,
+        toggleIcon,
+        totalTimeNode,
+        viewFrame,
+        brakeNode,
+    } = queryEventPlayerNodes(document);
+    const preloadPlayers = createPreloadPlayers(document);
 
     let activeIndex = 0;
     let pendingEventTime = null;
@@ -136,12 +107,6 @@ export function initEventPlayer() {
 
     const durationCache = new Map();
     const telemetryCache = new Map();
-
-    for (const preloadPlayer of Object.values(preloadPlayers)) {
-        preloadPlayer.preload = "auto";
-        preloadPlayer.muted = true;
-        preloadPlayer.playsInline = true;
-    }
 
     function clipHasTelemetry(clip) {
         return Boolean(clip?.hasTelemetry);

@@ -28,6 +28,7 @@ This file tracks remaining delivery work. Implemented behavior belongs in the RE
 
 ## Operational Hardening
 
+- [ ] Continue splitting oversized frontend/player and renderer modules so composition roots stay reviewable and testable.
 - [ ] Add structured logging for discovery, telemetry extraction, editing, and export jobs.
 - [ ] Audit the player-route load path for other avoidable per-load preprocessing beyond SEI sidecar reuse.
 - [ ] Decide whether to ship an optional dedicated-worker compose override for heavier render workloads on top of the new single-container default.
