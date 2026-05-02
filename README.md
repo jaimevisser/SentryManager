@@ -4,7 +4,7 @@ SentryManager is a web application for reviewing Tesla dashcam and Sentry Mode f
 
 The current UI is desktop-only for now. Narrow-screen and mobile layouts are not supported yet.
 
-The project uses a Python backend that serves Jinja-rendered HTML plus static JavaScript and CSS. The browser handles review and editing directly against original event clips, while the backend handles discovery helpers, telemetry extraction, render-plan generation, and worker-backed exports via `ffprobe` and `ffmpeg`.
+The project uses a Python backend that serves Jinja-rendered HTML plus static JavaScript and CSS. The browser handles review and editing directly against original event clips, while the backend handles discovery helpers, telemetry extraction, render-plan generation, and in-container background exports via `ffprobe` and `ffmpeg`.
 
 ## Goals
 
@@ -22,7 +22,7 @@ The project uses a Python backend that serves Jinja-rendered HTML plus static Ja
 - Review synchronized source clips in single, double, and triple camera layouts with master-timeline scrubbing.
 - Show telemetry overlays for speed, blinkers, brake state, autopilot state, and event-level `fsdOnPercent`.
 - Persist trim handles, a saved start marker, and camera markers in `sentrymanager.json`, then normalize them into contiguous `normalizedEditSegments`.
-- Generate render plans from normalized edit segments and queue worker-backed export jobs that render directly from original source clips.
+- Generate render plans from normalized edit segments and queue background export jobs that render directly from original source clips.
 - Surface export readiness, active job state, and latest output or failure details in the player.
 - Run browser-versus-export render-snapshot regression coverage against real `SavedClips` fixtures.
 
@@ -43,7 +43,7 @@ The project uses a Python backend that serves Jinja-rendered HTML plus static Ja
 - Flask for HTTP routing and Jinja template rendering
 - Gunicorn as the production container entrypoint
 - `ffprobe` and `ffmpeg` for clip probing and export rendering
-- File-backed render jobs processed by the `worker` service
+- File-backed render jobs processed by a daemon thread in the app container
 
 ### Frontend
 
@@ -109,7 +109,7 @@ The Compose file mounts these host folders into the container:
 ### Start the app
 
 ```bash
-TESLACAM_PATH=/absolute/path/to/TeslaCam docker compose up --build app worker
+TESLACAM_PATH=/absolute/path/to/TeslaCam docker compose up --build app
 ```
 
 The app will then be available at `http://localhost:8765`.
@@ -127,6 +127,8 @@ docker compose down
 - `APP_ENV`: Logical environment name for the app. Defaults to `development`.
 - `TESLACAM_ROOT`: In-container path to the TeslaCam footage root. Defaults to `/data/TeslaCam`.
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
+- `RENDER_WORKER_ENABLED`: Starts the background render worker thread inside the app container. Defaults to `true`.
+- `RENDER_WORKER_POLL_INTERVAL_SECONDS`: Poll interval for the in-container render worker. Defaults to `1.0`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
 

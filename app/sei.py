@@ -163,7 +163,15 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
         segment_entry = segments.setdefault((clip_file.parent, segment_key), {})
         segment_entry[camera_key] = clip_file
 
+    pending_event_dirs = {
+        event_dir
+        for event_dir, _ in segments
+        if not get_event_processing_marker_path(event_dir).is_file()
+    }
+
     for (event_dir, segment_key), camera_files in segments.items():
+        if event_dir not in pending_event_dirs:
+            continue
         try:
             result = ensure_segment_sei_sidecar(event_dir, segment_key, camera_files)
         except (OSError, ValueError, struct.error):
@@ -181,6 +189,8 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
         )
 
     for event_dir, _ in segments:
+        if event_dir not in pending_event_dirs:
+            continue
         try:
             ensure_event_processing_marker(
                 event_dir,

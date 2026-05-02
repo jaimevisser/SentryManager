@@ -5,7 +5,9 @@ from datetime import datetime
 import json
 import math
 from pathlib import Path
+import queue
 import shutil
+import threading
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 
@@ -17,6 +19,7 @@ from ..renderer import (
     get_latest_render_metadata,
     get_normalized_edit_segments,
     get_render_job,
+    start_render_worker_thread,
 )
 from ..sei import ensure_sei_sidecars, get_event_processing_marker_path, get_segment_sei_sidecar_path
 
@@ -91,128 +94,223 @@ _EVENT_SUMMARY_CACHE: dict[
     tuple[str, tuple[tuple[str, int, int, int], ...]],
     list[EventSummary],
 ] = {}
+_EVENT_INDEXING_QUEUE: queue.Queue[Path] = queue.Queue()
+_EVENT_INDEXING_PENDING: set[Path] = set()
+_EVENT_INDEXING_LOCK = threading.Lock()
+_EVENT_INDEXING_THREAD: threading.Thread | None = None
+
+
+def get_footage_root(app: Flask) -> Path:
+    return Path(app.config["TESLACAM_ROOT"]).resolve()
+
+
+def is_event_indexed(event_dir: Path) -> bool:
+    return get_event_processing_marker_path(event_dir).is_file()
+
+
+def queue_event_processing(event_dir: Path) -> None:
+    if is_event_indexed(event_dir):
+        return
+
+    with _EVENT_INDEXING_LOCK:
+        if event_dir in _EVENT_INDEXING_PENDING:
+            return
+        _EVENT_INDEXING_PENDING.add(event_dir)
+
+    _EVENT_INDEXING_QUEUE.put(event_dir)
+
+
+def queue_discovered_event_processing(event_directories: list[Path]) -> None:
+    for event_dir in event_directories:
+        queue_event_processing(event_dir)
+
+
+def _run_event_processing_worker() -> None:
+    while True:
+        event_dir = _EVENT_INDEXING_QUEUE.get()
+        try:
+            if is_event_indexed(event_dir):
+                continue
+
+            clip_files = get_event_clip_files(event_dir)
+            if not clip_files:
+                continue
+
+            ensure_sei_sidecars(clip_files)
+            _EVENT_SUMMARY_CACHE.clear()
+        finally:
+            with _EVENT_INDEXING_LOCK:
+                _EVENT_INDEXING_PENDING.discard(event_dir)
+            _EVENT_INDEXING_QUEUE.task_done()
+
+
+def start_event_processing_worker() -> None:
+    global _EVENT_INDEXING_THREAD
+
+    with _EVENT_INDEXING_LOCK:
+        if _EVENT_INDEXING_THREAD is not None and _EVENT_INDEXING_THREAD.is_alive():
+            return
+
+        _EVENT_INDEXING_THREAD = threading.Thread(
+            target=_run_event_processing_worker,
+            name="event-indexing-worker",
+            daemon=True,
+        )
+        _EVENT_INDEXING_THREAD.start()
+
+
+def resolve_path_within_footage_root(footage_root: Path, relative_path: str) -> Path:
+    resolved_path = (footage_root / relative_path).resolve()
+    if not _is_within_root(resolved_path, footage_root):
+        abort(404)
+    return resolved_path
+
+
+def require_event_dir(footage_root: Path, event_path: str) -> Path:
+    event_dir = resolve_path_within_footage_root(footage_root, event_path)
+    if not event_dir.is_dir():
+        abort(404)
+    return event_dir
+
+
+def require_file_path(footage_root: Path, relative_path: str) -> Path:
+    file_path = resolve_path_within_footage_root(footage_root, relative_path)
+    if not file_path.is_file():
+        abort(404)
+    return file_path
+
+
+def persist_normalized_edit_segments(
+    event_dir: Path,
+    event_processing_state: dict[str, object],
+    normalized_edit_segments: list[dict[str, object]],
+) -> None:
+    if not is_event_indexed(event_dir):
+        return
+
+    if event_processing_state.get("normalizedEditSegments") == normalized_edit_segments:
+        return
+
+    event_processing_state["normalizedEditSegments"] = normalized_edit_segments
+    try:
+        write_event_processing_state(event_dir, event_processing_state)
+    except OSError:
+        pass
+
+
+def build_playlist_payload(
+    event_dir: Path,
+    event_path: str,
+    camera_playlists: dict[str, list[EventClip]],
+) -> dict[str, list[dict[str, object]]]:
+    return {
+        camera_key: [
+            {
+                "segmentKey": clip.segment_key,
+                "segmentLabel": clip.segment_label,
+                "fileName": clip.file_name,
+                "url": url_for("event_clip", clip_path=clip.file_path),
+                "hasTelemetry": get_segment_sei_sidecar_path(event_dir, clip.segment_key).is_file(),
+                "telemetryUrl": url_for("event_telemetry", event_path=event_path, segment_key=clip.segment_key),
+            }
+            for clip in clips
+        ]
+        for camera_key, clips in camera_playlists.items()
+    }
+
+
+def build_event_player_template_context(event_dir: Path, footage_root: Path) -> dict[str, object] | None:
+    clip_files = get_event_clip_files(event_dir)
+    if not clip_files:
+        return None
+
+    event_summary = summarize_event_dir(event_dir, footage_root, clip_files=clip_files)
+    if event_summary is None:
+        return None
+
+    camera_playlists = build_camera_playlists_payload(event_dir, footage_root)
+    if not camera_playlists:
+        return None
+
+    default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
+    event_processing_state = load_event_processing_state(event_dir)
+    event_driver_assist_display = get_event_driver_assist_display(event_processing_state)
+    saved_player_edits = get_saved_player_edits(event_processing_state)
+    normalized_edit_segments = get_normalized_edit_segments(event_summary.path, saved_player_edits)
+    persist_normalized_edit_segments(event_dir, event_processing_state, normalized_edit_segments)
+    latest_render = get_latest_render_metadata(event_dir)
+    active_render_job = get_latest_event_render_job(footage_root, event_summary.path, statuses=ACTIVE_JOB_STATUSES)
+
+    return {
+        "event": event_summary,
+        "view_selector": build_view_selector(camera_playlists),
+        "default_view_key": default_view_key,
+        "playlist_payload": build_playlist_payload(event_dir, event_summary.path, camera_playlists),
+        "event_has_autopilot_activity": event_processing_state.get("hasAutopilotActivity", False),
+        "event_has_steering_angle_data": event_processing_state.get("hasSteeringAngleData", False),
+        "event_driver_assist_display": event_driver_assist_display,
+        "event_marker_time": event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
+        "initial_start_time": get_initial_player_start_time(event_summary, saved_player_edits),
+        "saved_player_edits": saved_player_edits,
+        "normalized_edit_segments": normalized_edit_segments,
+        "player_edits_save_url": url_for("update_event_player_edits", event_path=event_summary.path),
+        "player_render_url": url_for("render_event_export", event_path=event_summary.path),
+        "player_download_url": url_for("download_latest_event_render", event_path=event_summary.path),
+        "active_render_job": serialize_render_job(event_summary.path, active_render_job) if active_render_job else None,
+        "latest_render": latest_render,
+        "page_delete_event_path": event_summary.path,
+        "page_delete_redirect_url": url_for("index"),
+        "page_title": f"{event_summary.day_label} Player | SentryManager",
+        "page_description": f"Review TeslaCam clips for {event_summary.name}.",
+        "page_shell_class": "page-shell-full",
+    }
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
     apply_settings(app)
+    start_event_processing_worker()
+    start_render_worker_thread(get_footage_root(app))
 
     @app.route("/event-thumbnails/<path:event_path>")
     def event_thumbnail(event_path: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
-        thumbnail_path = (footage_root / event_path / "thumb.png").resolve()
-        if not thumbnail_path.is_file():
-            abort(404)
-        if not _is_within_root(thumbnail_path, footage_root):
-            abort(404)
+        footage_root = get_footage_root(app)
+        thumbnail_path = require_file_path(footage_root, str(Path(event_path) / "thumb.png"))
         return send_file(thumbnail_path, conditional=True, max_age=3600)
 
     @app.route("/event-clips/<path:clip_path>")
     def event_clip(clip_path: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
-        clip_file = (footage_root / clip_path).resolve()
-        if not clip_file.is_file():
-            abort(404)
-        if not _is_within_root(clip_file, footage_root):
-            abort(404)
+        footage_root = get_footage_root(app)
+        clip_file = require_file_path(footage_root, clip_path)
         return send_file(clip_file, conditional=True)
 
     @app.route("/event-telemetry/<path:event_path>/<segment_key>")
     def event_telemetry(event_path: str, segment_key: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
-        event_dir = (footage_root / event_path).resolve()
-        if not event_dir.is_dir():
-            abort(404)
-        if not _is_within_root(event_dir, footage_root):
-            abort(404)
+        footage_root = get_footage_root(app)
+        event_dir = require_event_dir(footage_root, event_path)
 
         sidecar_file = get_segment_sei_sidecar_path(event_dir, segment_key)
-        if not sidecar_file.is_file():
-            abort(404)
-        if not _is_within_root(sidecar_file, footage_root):
+        if not sidecar_file.is_file() or not _is_within_root(sidecar_file, footage_root):
             abort(404)
 
         return send_file(sidecar_file, mimetype="application/octet-stream", conditional=True)
 
     @app.route("/events/<path:event_path>")
     def event_player(event_path: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
-        event_dir = (footage_root / event_path).resolve()
-        if not event_dir.is_dir():
+        footage_root = get_footage_root(app)
+        event_dir = require_event_dir(footage_root, event_path)
+        queue_event_processing(event_dir)
+        template_context = build_event_player_template_context(event_dir, footage_root)
+        if template_context is None:
             abort(404)
-        if not _is_within_root(event_dir, footage_root):
-            abort(404)
-
-        clip_files = get_event_clip_files(event_dir)
-        if not clip_files:
-            abort(404)
-
-        ensure_sei_sidecars(clip_files)
-
-        event_summary = summarize_event_dir(event_dir, footage_root, clip_files=clip_files)
-        if event_summary is None:
-            abort(404)
-
-        camera_playlists = build_camera_playlists_payload(event_dir, footage_root)
-        if not camera_playlists:
-            abort(404)
-
-        default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
-        event_processing_state = load_event_processing_state(event_dir)
-        event_driver_assist_display = get_event_driver_assist_display(event_processing_state)
-        saved_player_edits = get_saved_player_edits(event_processing_state)
-        normalized_edit_segments = get_normalized_edit_segments(event_summary.path, saved_player_edits)
-        if event_processing_state.get("normalizedEditSegments") != normalized_edit_segments:
-            event_processing_state["normalizedEditSegments"] = normalized_edit_segments
-            try:
-                write_event_processing_state(event_dir, event_processing_state)
-            except OSError:
-                pass
-        latest_render = get_latest_render_metadata(event_dir)
-        active_render_job = get_latest_event_render_job(footage_root, event_summary.path, statuses=ACTIVE_JOB_STATUSES)
-        initial_start_time = get_initial_player_start_time(event_summary, saved_player_edits)
-        return render_template(
-            "event_player.html",
-            event=event_summary,
-            view_selector=build_view_selector(camera_playlists),
-            default_view_key=default_view_key,
-            playlist_payload={
-                camera_key: [
-                    {
-                        "segmentKey": clip.segment_key,
-                        "segmentLabel": clip.segment_label,
-                        "fileName": clip.file_name,
-                        "url": url_for("event_clip", clip_path=clip.file_path),
-                        "hasTelemetry": get_segment_sei_sidecar_path(event_dir, clip.segment_key).is_file(),
-                        "telemetryUrl": url_for("event_telemetry", event_path=event_summary.path, segment_key=clip.segment_key),
-                    }
-                    for clip in clips
-                ]
-                for camera_key, clips in camera_playlists.items()
-            },
-            event_has_autopilot_activity=event_processing_state.get("hasAutopilotActivity", False),
-            event_has_steering_angle_data=event_processing_state.get("hasSteeringAngleData", False),
-            event_driver_assist_display=event_driver_assist_display,
-            event_marker_time=event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
-            initial_start_time=initial_start_time,
-            saved_player_edits=saved_player_edits,
-            normalized_edit_segments=normalized_edit_segments,
-            player_edits_save_url=url_for("update_event_player_edits", event_path=event_summary.path),
-            player_render_url=url_for("render_event_export", event_path=event_summary.path),
-            player_download_url=url_for("download_latest_event_render", event_path=event_summary.path),
-            active_render_job=serialize_render_job(event_summary.path, active_render_job) if active_render_job else None,
-            latest_render=latest_render,
-            page_delete_event_path=event_summary.path,
-            page_delete_redirect_url=url_for("index"),
-            page_title=f"{event_summary.day_label} Player | SentryManager",
-            page_description=f"Review TeslaCam clips for {event_summary.name}.",
-            page_shell_class="page-shell-full",
-        )
+        return render_template("event_player.html", **template_context)
 
     @app.route("/")
     def index() -> str:
         footage_root = Path(app.config["TESLACAM_ROOT"])
-        event_summaries = discover_event_summaries(footage_root)
+        event_directories = discover_event_directories(footage_root)
+        queue_discovered_event_processing(event_directories)
+        event_summaries = discover_event_summaries(footage_root, event_directories=event_directories)
         day_groups = group_events_by_day(event_summaries)
         return render_template("index.html", day_groups=day_groups)
 
@@ -226,7 +324,7 @@ def create_app() -> Flask:
         if not isinstance(raw_event_paths, list) or len(raw_event_paths) == 0:
             return jsonify({"error": "Select at least one clip to delete."}), 400
 
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
+        footage_root = get_footage_root(app)
         event_directories: list[Path] = []
         deleted_paths: list[str] = []
         seen_directories: set[Path] = set()
@@ -239,8 +337,8 @@ def create_app() -> Flask:
             if normalized_event_path in {Path("."), Path("")}:
                 return jsonify({"error": "Deleting the TeslaCam root is not allowed."}), 400
 
-            event_dir = (footage_root / normalized_event_path).resolve()
-            if not event_dir.is_dir() or not _is_within_root(event_dir, footage_root):
+            event_dir = resolve_path_within_footage_root(footage_root, str(normalized_event_path))
+            if not event_dir.is_dir():
                 return jsonify({"error": f"Clip folder not found: {raw_event_path}"}), 404
 
             if event_dir in seen_directories:
@@ -261,10 +359,14 @@ def create_app() -> Flask:
 
     @app.post("/events/<path:event_path>/player-edits")
     def update_event_player_edits(event_path: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
-        event_dir = (footage_root / event_path).resolve()
-        if not event_dir.is_dir() or not _is_within_root(event_dir, footage_root):
+        footage_root = get_footage_root(app)
+        event_dir = resolve_path_within_footage_root(footage_root, event_path)
+        if not event_dir.is_dir():
             return jsonify({"error": "Clip folder not found."}), 404
+
+        if not is_event_indexed(event_dir):
+            queue_event_processing(event_dir)
+            return jsonify({"error": "Clip indexing is still in progress."}), 409
 
         payload = request.get_json(silent=True)
         player_edits = normalize_saved_player_edits(payload)
@@ -286,10 +388,14 @@ def create_app() -> Flask:
 
     @app.post("/events/<path:event_path>/render")
     def render_event_export(event_path: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
-        event_dir = (footage_root / event_path).resolve()
-        if not event_dir.is_dir() or not _is_within_root(event_dir, footage_root):
+        footage_root = get_footage_root(app)
+        event_dir = resolve_path_within_footage_root(footage_root, event_path)
+        if not event_dir.is_dir():
             return jsonify({"error": "Clip folder not found."}), 404
+
+        if not is_event_indexed(event_dir):
+            queue_event_processing(event_dir)
+            return jsonify({"error": "Clip indexing is still in progress."}), 409
 
         processing_state = load_event_processing_state(event_dir)
         payload = request.get_json(silent=True)
@@ -329,7 +435,7 @@ def create_app() -> Flask:
 
     @app.get("/events/<path:event_path>/render/jobs/<job_id>")
     def get_render_job_status(event_path: str, job_id: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
+        footage_root = get_footage_root(app)
         job = get_render_job(footage_root, job_id)
         if job is None or job.get("eventId") != event_path:
             return jsonify({"error": "Render job not found."}), 404
@@ -337,10 +443,8 @@ def create_app() -> Flask:
 
     @app.get("/events/<path:event_path>/render/latest")
     def download_latest_event_render(event_path: str):
-        footage_root = Path(app.config["TESLACAM_ROOT"]).resolve()
-        event_dir = (footage_root / event_path).resolve()
-        if not event_dir.is_dir() or not _is_within_root(event_dir, footage_root):
-            abort(404)
+        footage_root = get_footage_root(app)
+        event_dir = require_event_dir(footage_root, event_path)
 
         latest_render = get_latest_render_metadata(event_dir)
         if latest_render is None:
@@ -360,11 +464,15 @@ def create_app() -> Flask:
     return app
 
 
-def discover_event_summaries(footage_root: Path, limit: int | None = None) -> list[EventSummary]:
+def discover_event_summaries(
+    footage_root: Path,
+    limit: int | None = None,
+    event_directories: list[Path] | None = None,
+) -> list[EventSummary]:
     if not footage_root.exists() or not footage_root.is_dir():
         return []
 
-    event_directories = discover_event_directories(footage_root)
+    event_directories = event_directories if event_directories is not None else discover_event_directories(footage_root)
     cache_key = build_event_summary_cache_key(footage_root.resolve(), event_directories)
     cached_summaries = _EVENT_SUMMARY_CACHE.get(cache_key)
     if cached_summaries is None:

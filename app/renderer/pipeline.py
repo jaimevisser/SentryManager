@@ -222,75 +222,14 @@ def build_render_plan(
     if not normalized_segments:
         raise ValueError("No exportable segments were found in the saved player edits.")
 
-    profile_key = _normalize_export_format(output_profile or player_edits.get("exportFormat") if isinstance(player_edits, dict) else None)
+    profile_key = _resolve_output_profile(player_edits, output_profile)
     frame_size = EXPORT_PROFILES[profile_key]
     media_index = _build_media_index(event_dir, footage_root)
     if not media_index:
         raise ValueError("No source clips were found for this event.")
 
-    render_segments: list[dict[str, object]] = []
-    render_timeline_cursor = 0.0
-    for segment in normalized_segments:
-        slot_specs = _get_layout_slot_specs(
-            str(segment["layout"]),
-            str(segment["primary_camera"]),
-            frame_size["width"],
-            frame_size["height"],
-        )
-        slots: list[dict[str, object]] = []
-        slot_durations: dict[str, float] = {}
-        longest_slot_duration = 0.0
-        for slot_spec in slot_specs:
-            fragments = _resolve_fragments(
-                media_index=media_index,
-                camera_key=slot_spec["camera"],
-                timeline_start=float(segment["timeline_start"]),
-                timeline_end=float(segment["timeline_end"]),
-            )
-            slot_duration = sum(fragment.sourceOut - fragment.sourceIn for fragment in fragments)
-            slot_durations[slot_spec["camera"]] = slot_duration
-            longest_slot_duration = max(longest_slot_duration, slot_duration)
-            slots.append(
-                {
-                    "camera": slot_spec["camera"],
-                    "fragments": [asdict(fragment) for fragment in fragments],
-                    "x": slot_spec["x"],
-                    "y": slot_spec["y"],
-                    "width": slot_spec["width"],
-                    "height": slot_spec["height"],
-                }
-            )
-
-        segment_duration = longest_slot_duration
-        if segment_duration <= 0:
-            segment_duration = float(segment["timeline_end"]) - float(segment["timeline_start"])
-
-        missing_cameras = sorted(
-            camera_key
-            for camera_key, slot_duration in slot_durations.items()
-            if slot_duration + MISSING_CAMERA_DURATION_TOLERANCE < segment_duration
-        )
-
-        render_segments.append(
-            {
-                "segmentId": segment["id"],
-                "browserTimelineStart": segment["timeline_start"],
-                "browserTimelineEnd": segment["timeline_end"],
-                "renderTimelineStart": _round_time(render_timeline_cursor),
-                "renderTimelineEnd": _round_time(render_timeline_cursor + segment_duration),
-                "layout": segment["layout"],
-                "slots": slots,
-                "overlay": {"telemetry": any(_slot_has_telemetry(slot) for slot in slots)},
-                "missingCameras": sorted(set(missing_cameras)),
-            }
-        )
-        render_timeline_cursor += segment_duration
-
-    output_dir = event_dir / "exports"
-    plan_timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    intermediate_dir = output_dir / f"{plan_timestamp}-{profile_key}-segments"
-    output_path = output_dir / f"{event_dir.name}-{profile_key}-{plan_timestamp}.mp4"
-    render_plan_path = output_dir / f"{event_dir.name}-{profile_key}-{plan_timestamp}.render-plan.json"
+    render_segments = _build_render_segments(normalized_segments, frame_size, media_index)
+    output_paths = _build_render_output_paths(event_dir, profile_key)
     return {
         "eventId": event_id,
         "outputProfile": profile_key,
@@ -298,10 +237,114 @@ def build_render_plan(
         "frameRate": _pick_render_frame_rate(media_index),
         "segments": render_segments,
         "overlayConfig": {"telemetry": False},
+        **output_paths,
+        "mediaIndex": [asdict(clip) for clip in media_index],
+    }
+
+
+def _resolve_output_profile(player_edits: dict[str, object] | None, output_profile: str | None) -> str:
+    requested_profile = output_profile
+    if requested_profile is None and isinstance(player_edits, dict):
+        requested_profile = player_edits.get("exportFormat")
+    return _normalize_export_format(requested_profile)
+
+
+def _build_render_segments(
+    normalized_segments: list[dict[str, object]],
+    frame_size: dict[str, int],
+    media_index: list[MediaClip],
+) -> list[dict[str, object]]:
+    render_segments: list[dict[str, object]] = []
+    render_timeline_cursor = 0.0
+    for segment in normalized_segments:
+        render_segment, segment_duration = _build_render_segment(
+            segment=segment,
+            frame_size=frame_size,
+            media_index=media_index,
+            render_timeline_cursor=render_timeline_cursor,
+        )
+        render_segments.append(render_segment)
+        render_timeline_cursor += segment_duration
+    return render_segments
+
+
+def _build_render_segment(
+    segment: dict[str, object],
+    frame_size: dict[str, int],
+    media_index: list[MediaClip],
+    render_timeline_cursor: float,
+) -> tuple[dict[str, object], float]:
+    slots, slot_durations = _build_render_slots(segment, frame_size, media_index)
+    segment_duration = max(slot_durations.values(), default=0.0)
+    if segment_duration <= 0:
+        segment_duration = float(segment["timeline_end"]) - float(segment["timeline_start"])
+
+    render_segment = {
+        "segmentId": segment["id"],
+        "browserTimelineStart": segment["timeline_start"],
+        "browserTimelineEnd": segment["timeline_end"],
+        "renderTimelineStart": _round_time(render_timeline_cursor),
+        "renderTimelineEnd": _round_time(render_timeline_cursor + segment_duration),
+        "layout": segment["layout"],
+        "slots": slots,
+        "overlay": {"telemetry": any(_slot_has_telemetry(slot) for slot in slots)},
+        "missingCameras": _find_missing_cameras(slot_durations, segment_duration),
+    }
+    return render_segment, segment_duration
+
+
+def _build_render_slots(
+    segment: dict[str, object],
+    frame_size: dict[str, int],
+    media_index: list[MediaClip],
+) -> tuple[list[dict[str, object]], dict[str, float]]:
+    slot_specs = _get_layout_slot_specs(
+        str(segment["layout"]),
+        str(segment["primary_camera"]),
+        frame_size["width"],
+        frame_size["height"],
+    )
+    slots: list[dict[str, object]] = []
+    slot_durations: dict[str, float] = {}
+    for slot_spec in slot_specs:
+        fragments = _resolve_fragments(
+            media_index=media_index,
+            camera_key=slot_spec["camera"],
+            timeline_start=float(segment["timeline_start"]),
+            timeline_end=float(segment["timeline_end"]),
+        )
+        slot_durations[slot_spec["camera"]] = sum(fragment.sourceOut - fragment.sourceIn for fragment in fragments)
+        slots.append(
+            {
+                "camera": slot_spec["camera"],
+                "fragments": [asdict(fragment) for fragment in fragments],
+                "x": slot_spec["x"],
+                "y": slot_spec["y"],
+                "width": slot_spec["width"],
+                "height": slot_spec["height"],
+            }
+        )
+    return slots, slot_durations
+
+
+def _find_missing_cameras(slot_durations: dict[str, float], segment_duration: float) -> list[str]:
+    return sorted(
+        camera_key
+        for camera_key, slot_duration in slot_durations.items()
+        if slot_duration + MISSING_CAMERA_DURATION_TOLERANCE < segment_duration
+    )
+
+
+def _build_render_output_paths(event_dir: Path, profile_key: str) -> dict[str, str]:
+    output_dir = event_dir / "exports"
+    plan_timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    intermediate_dir = output_dir / f"{plan_timestamp}-{profile_key}-segments"
+    output_path = output_dir / f"{event_dir.name}-{profile_key}-{plan_timestamp}.mp4"
+    render_plan_path = output_dir / f"{event_dir.name}-{profile_key}-{plan_timestamp}.render-plan.json"
+    return {
         "outputPath": str(output_path),
         "intermediateDir": str(intermediate_dir),
         "renderPlanPath": str(render_plan_path),
-        "mediaIndex": [asdict(clip) for clip in media_index],
     }
 
 
@@ -320,14 +363,7 @@ def render_event(
         output_profile=output_profile,
     )
 
-    output_dir = Path(render_plan["outputPath"]).parent
-    intermediate_dir = Path(render_plan["intermediateDir"])
-    output_dir.mkdir(parents=True, exist_ok=True)
-    intermediate_dir.mkdir(parents=True, exist_ok=True)
-    Path(render_plan["renderPlanPath"]).write_text(
-        json.dumps(render_plan, ensure_ascii=True, indent=2),
-        encoding="utf-8",
-    )
+    _prepare_render_plan_outputs(render_plan)
 
     media_clips_by_path = {
         str(clip["absolute_file_path"]): clip
@@ -336,19 +372,14 @@ def render_event(
     event_processing_state = _load_event_processing_state(event_dir)
     event_driver_assist_display = _get_event_driver_assist_display(event_processing_state)
 
-    segment_outputs: list[Path] = []
-    for segment in render_plan["segments"]:
-        segment_output = intermediate_dir / f"{segment['segmentId']}.mp4"
-        _render_segment(
-            segment=segment,
-            event_dir=event_dir,
-            event_driver_assist_display=event_driver_assist_display,
-            frame_size=render_plan["frameSize"],
-            frame_rate=float(render_plan["frameRate"]),
-            media_clips_by_path=media_clips_by_path,
-            output_path=segment_output,
-        )
-        segment_outputs.append(segment_output)
+    intermediate_dir = Path(render_plan["intermediateDir"])
+    segment_outputs = _render_plan_segments(
+        render_plan=render_plan,
+        event_dir=event_dir,
+        event_driver_assist_display=event_driver_assist_display,
+        media_clips_by_path=media_clips_by_path,
+        intermediate_dir=intermediate_dir,
+    )
 
     concat_list = intermediate_dir / "segments.txt"
     concat_list.write_text(
@@ -371,6 +402,44 @@ def render_event(
         ]
     )
 
+    return _build_render_result(render_plan)
+
+
+def _prepare_render_plan_outputs(render_plan: dict[str, object]) -> None:
+    output_dir = Path(str(render_plan["outputPath"])).parent
+    intermediate_dir = Path(str(render_plan["intermediateDir"]))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    intermediate_dir.mkdir(parents=True, exist_ok=True)
+    Path(str(render_plan["renderPlanPath"])).write_text(
+        json.dumps(render_plan, ensure_ascii=True, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _render_plan_segments(
+    render_plan: dict[str, object],
+    event_dir: Path,
+    event_driver_assist_display: dict[str, object] | None,
+    media_clips_by_path: dict[str, dict[str, object]],
+    intermediate_dir: Path,
+) -> list[Path]:
+    segment_outputs: list[Path] = []
+    for segment in render_plan["segments"]:
+        segment_output = intermediate_dir / f"{segment['segmentId']}.mp4"
+        _render_segment(
+            segment=segment,
+            event_dir=event_dir,
+            event_driver_assist_display=event_driver_assist_display,
+            frame_size=render_plan["frameSize"],
+            frame_rate=float(render_plan["frameRate"]),
+            media_clips_by_path=media_clips_by_path,
+            output_path=segment_output,
+        )
+        segment_outputs.append(segment_output)
+    return segment_outputs
+
+
+def _build_render_result(render_plan: dict[str, object]) -> dict[str, object]:
     return {
         "status": "succeeded",
         "requestedAt": datetime.now(UTC).isoformat(),
@@ -663,7 +732,7 @@ def _resolve_fragments(
 def _render_segment(
     segment: dict[str, object],
     event_dir: Path,
-    event_fsd_on_percent: float | None,
+    event_driver_assist_display: dict[str, object] | None,
     frame_size: dict[str, int],
     frame_rate: float,
     media_clips_by_path: dict[str, dict[str, object]],
@@ -779,7 +848,7 @@ def _render_segment(
     overlay_created = _render_segment_telemetry_overlay(
         segment=segment,
         event_dir=event_dir,
-        event_fsd_on_percent=event_fsd_on_percent,
+        event_driver_assist_display=event_driver_assist_display,
         frame_size=frame_size,
         frame_rate=frame_rate,
         media_clips_by_path=media_clips_by_path,
