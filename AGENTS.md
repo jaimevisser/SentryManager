@@ -12,6 +12,7 @@
 - For Markdown and config, on-disk state is the source of truth.
 - Keep the app server-rendered unless client complexity is needed.
 - If the human does something dumb, say so.
+- Keep responses extremely terse and clear, don't repeat known information, don't leave out constraints or caveats.
 
 ## Commit/Push
 
