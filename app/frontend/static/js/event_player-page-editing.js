@@ -1,3 +1,5 @@
+import { createEventPlayerMarkerUiController } from "./event_player-page-marker-ui.js";
+
 export function createEventPlayerEditingController({
     documentObject,
     player,
@@ -36,7 +38,6 @@ export function createEventPlayerEditingController({
     let lastPlaybackEventTime = null;
     let activePlaybackCameraMarkerId = null;
 
-    const cameraMarkerNodes = new Map();
     const startMarkerViewSelection = {
         layout: getActiveLayout(),
         cameraKey: getActiveCameraKey(),
@@ -55,18 +56,6 @@ export function createEventPlayerEditingController({
         })(),
     }));
 
-    const startMarkerPopover = editTrack && startMarkerButton
-        ? documentObject.createElement("div")
-        : null;
-    const startMarkerPopoverButtons = [];
-
-    if (startMarkerPopover && editTrack) {
-        startMarkerPopover.className = "player-edit-camera-popover player-edit-start-marker-popover";
-        startMarkerPopover.hidden = true;
-        startMarkerPopoverButtons.push(...createViewSelectionControls(startMarkerPopover));
-        editTrack.append(startMarkerPopover);
-    }
-
     function findCameraMarker(markerId) {
         return cameraMarkers.find((marker) => marker.id === markerId) || null;
     }
@@ -79,35 +68,38 @@ export function createEventPlayerEditingController({
         return normalizeViewSelection(marker);
     }
 
-    function createViewSelectionControls(popover) {
-        const controlButtons = [];
-        for (const blueprint of cameraMarkerControlBlueprints) {
-            if (!blueprint.value) {
-                continue;
-            }
-            const controlButton = documentObject.createElement("button");
-            controlButton.type = "button";
-            controlButton.className = "player-camera-overlay-button";
-            controlButton.setAttribute("aria-label", blueprint.ariaLabel);
-            if (blueprint.type === "layout") {
-                controlButton.dataset.viewLayoutOption = blueprint.value;
-            } else {
-                controlButton.dataset.viewCameraTarget = blueprint.value;
-            }
-
-            const icon = documentObject.createElement("img");
-            icon.className = "player-camera-overlay-icon";
-            icon.dataset.inactiveSrc = blueprint.icon.inactiveSrc;
-            icon.dataset.activeSrc = blueprint.icon.activeSrc;
-            icon.src = blueprint.icon.src;
-            icon.alt = "";
-            icon.setAttribute("aria-hidden", "true");
-            controlButton.append(icon);
-            popover.append(controlButton);
-            controlButtons.push(controlButton);
-        }
-        return controlButtons;
-    }
+    const markerUiController = createEventPlayerMarkerUiController({
+        documentObject,
+        editTrack,
+        startMarkerButton,
+        controlBlueprints: cameraMarkerControlBlueprints,
+        formatClockTime,
+        callbacks: {
+            findCameraMarker,
+            getActiveCameraMarkerId: () => activeCameraMarkerId,
+            getCameraMarkers: () => cameraMarkers,
+            getEditTrackTimeFromClientX,
+            getStartMarkerPopoverOpen: () => startMarkerPopoverOpen,
+            getStartMarkerViewSelection: () => startMarkerViewSelection,
+            getTrimStartTime: () => trimStartTime,
+            getVisibleCameraKeysForSelection,
+            hasCameraPlaylist,
+            isCameraMarkerPointerOutsideLane,
+            normalizeCameraMarker,
+            normalizeViewSelection,
+            onStateChanged,
+            removeCameraMarker,
+            schedulePlayerEditsPersistence,
+            setActiveCameraMarkerId: (nextMarkerId) => {
+                activeCameraMarkerId = nextMarkerId;
+            },
+            setCameraMarkerTime,
+            setStartMarkerPopoverOpen: (isOpen) => {
+                startMarkerPopoverOpen = isOpen;
+            },
+            updateTrimMarkerFromPointer,
+        },
+    });
 
     function buildPlayerEditsPayload(exportFormat) {
         normalizeViewSelection(startMarkerViewSelection);
@@ -309,54 +301,6 @@ export function createEventPlayerEditingController({
         return currentVisibleCameraKeys === selectionVisibleCameraKeys;
     }
 
-    function syncOverlayButtonState(button, isActive, isDisabled = false) {
-        button.classList.toggle("is-active", isActive);
-        button.setAttribute("aria-pressed", isActive ? "true" : "false");
-        button.disabled = isDisabled;
-        const icon = button.querySelector(".player-camera-overlay-icon");
-        if (icon?.dataset.activeSrc && icon?.dataset.inactiveSrc) {
-            icon.src = isActive ? icon.dataset.activeSrc : icon.dataset.inactiveSrc;
-        }
-    }
-
-    function syncViewSelectionControls(selection, controlButtons) {
-        normalizeViewSelection(selection);
-        const visibleCameraKeys = getVisibleCameraKeysForSelection(selection.layout, selection.cameraKey);
-        for (const button of controlButtons) {
-            const layoutOption = button.dataset.viewLayoutOption;
-            const cameraTarget = button.dataset.viewCameraTarget;
-            if (layoutOption) {
-                syncOverlayButtonState(button, layoutOption === selection.layout, false);
-                continue;
-            }
-            const isAvailable = Boolean(cameraTarget && hasCameraPlaylist(cameraTarget));
-            const isActive = Boolean(cameraTarget && visibleCameraKeys.has(cameraTarget));
-            syncOverlayButtonState(button, isActive, !isAvailable);
-        }
-    }
-
-    function syncCameraMarkerPopover(marker, node) {
-        if (!node) {
-            return;
-        }
-
-        syncViewSelectionControls(marker, node.controlButtons);
-    }
-
-    function getCameraMarkerPopoverAlign(markerTime, totalDuration) {
-        if (!(totalDuration > 0)) {
-            return "center";
-        }
-        const ratio = markerTime / totalDuration;
-        if (ratio <= 0.16) {
-            return "start";
-        }
-        if (ratio >= 0.84) {
-            return "end";
-        }
-        return "center";
-    }
-
     function getEditTrackTimeFromClientX(clientX) {
         if (!editTrack) {
             return 0;
@@ -372,209 +316,8 @@ export function createEventPlayerEditingController({
         return ratio * totalDuration;
     }
 
-    function createCameraMarkerNode(marker) {
-        if (!editTrack) {
-            return null;
-        }
-
-        const shell = documentObject.createElement("div");
-        shell.className = "player-edit-camera-marker-shell";
-        shell.dataset.markerId = String(marker.id);
-
-        const button = documentObject.createElement("button");
-        button.type = "button";
-        button.className = "player-edit-marker player-edit-marker-camera";
-
-        const icon = documentObject.createElement("img");
-        icon.className = "player-edit-marker-icon";
-        icon.src = editTrack.dataset.markerCameraIconUrl || "/static/mdi/marker-camera.svg";
-        icon.alt = "";
-        icon.setAttribute("aria-hidden", "true");
-        button.append(icon);
-
-        let draggedDuringPointerSequence = false;
-        let pointerStartX = 0;
-        let pointerStartY = 0;
-
-        const popover = documentObject.createElement("div");
-        popover.className = "player-edit-camera-popover";
-        popover.hidden = true;
-
-        const controlButtons = createViewSelectionControls(popover);
-
-        button.addEventListener("click", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (draggedDuringPointerSequence) {
-                draggedDuringPointerSequence = false;
-                return;
-            }
-            startMarkerPopoverOpen = false;
-            activeCameraMarkerId = activeCameraMarkerId === marker.id ? null : marker.id;
-            onStateChanged();
-        });
-
-        button.addEventListener("pointerdown", (event) => {
-            if (event.button !== 0) {
-                return;
-            }
-            pointerStartX = event.clientX;
-            pointerStartY = event.clientY;
-            draggedDuringPointerSequence = false;
-            shell.style.setProperty("--player-marker-drag-offset-y", "0px");
-            shell.classList.remove("is-removing");
-            button.setPointerCapture(event.pointerId);
-        });
-
-        button.addEventListener("pointermove", (event) => {
-            if (!button.hasPointerCapture(event.pointerId)) {
-                return;
-            }
-
-            const deltaX = event.clientX - pointerStartX;
-            const deltaY = event.clientY - pointerStartY;
-            if (!draggedDuringPointerSequence && Math.hypot(deltaX, deltaY) < 4) {
-                return;
-            }
-
-            draggedDuringPointerSequence = true;
-            event.preventDefault();
-            shell.style.setProperty("--player-marker-drag-offset-y", `${deltaY}px`);
-            shell.classList.toggle("is-removing", isCameraMarkerPointerOutsideLane(event.clientY));
-            const nextTime = getEditTrackTimeFromClientX(event.clientX);
-            setCameraMarkerTime(marker.id, nextTime);
-        });
-
-        const finishDragging = (event) => {
-            if (!button.hasPointerCapture(event.pointerId)) {
-                return;
-            }
-
-            button.releasePointerCapture(event.pointerId);
-            const deltaX = event.clientX - pointerStartX;
-            const deltaY = event.clientY - pointerStartY;
-            shell.style.setProperty("--player-marker-drag-offset-y", "0px");
-
-            if (Math.hypot(deltaX, deltaY) < 4) {
-                shell.classList.remove("is-removing");
-                return;
-            }
-
-            draggedDuringPointerSequence = true;
-            event.preventDefault();
-            const shouldRemoveMarker = event.type !== "pointercancel" && isCameraMarkerPointerOutsideLane(event.clientY);
-            shell.classList.remove("is-removing");
-            if (shouldRemoveMarker) {
-                removeCameraMarker(marker.id);
-                return;
-            }
-            const nextTime = getEditTrackTimeFromClientX(event.clientX);
-            setCameraMarkerTime(marker.id, nextTime);
-        };
-
-        const cancelDragging = (event) => {
-            if (!button.hasPointerCapture(event.pointerId)) {
-                return;
-            }
-
-            button.releasePointerCapture(event.pointerId);
-            shell.style.setProperty("--player-marker-drag-offset-y", "0px");
-            shell.classList.remove("is-removing");
-        };
-
-        button.addEventListener("pointerup", finishDragging);
-        button.addEventListener("pointercancel", cancelDragging);
-
-        popover.addEventListener("click", (event) => {
-            event.stopPropagation();
-            const target = event.target;
-            if (!(target instanceof Element)) {
-                return;
-            }
-            const controlButton = target.closest(".player-camera-overlay-button");
-            if (!(controlButton instanceof HTMLButtonElement)) {
-                return;
-            }
-
-            const markerState = findCameraMarker(marker.id);
-            if (!markerState) {
-                return;
-            }
-
-            const nextLayout = controlButton.dataset.viewLayoutOption;
-            if (nextLayout) {
-                markerState.layout = nextLayout;
-                normalizeCameraMarker(markerState);
-                onStateChanged();
-                schedulePlayerEditsPersistence();
-                return;
-            }
-
-            const nextCameraKey = controlButton.dataset.viewCameraTarget;
-            if (!nextCameraKey || !hasCameraPlaylist(nextCameraKey)) {
-                return;
-            }
-            markerState.cameraKey = nextCameraKey;
-            normalizeCameraMarker(markerState);
-            onStateChanged();
-            schedulePlayerEditsPersistence();
-        });
-
-        shell.append(button, popover);
-        editTrack.append(shell);
-
-        const node = { shell, button, popover, controlButtons };
-        cameraMarkerNodes.set(marker.id, node);
-        return node;
-    }
-
-    function syncStartMarkerPopoverUI(totalDuration) {
-        if (!startMarkerButton || !startMarkerPopover) {
-            return;
-        }
-
-        normalizeViewSelection(startMarkerViewSelection);
-        const startRatio = totalDuration > 0 ? trimStartTime / totalDuration : 0;
-        startMarkerPopover.style.left = `${startRatio * 100}%`;
-        startMarkerPopover.hidden = !startMarkerPopoverOpen;
-        startMarkerPopover.dataset.align = getCameraMarkerPopoverAlign(trimStartTime, totalDuration);
-        startMarkerButton.classList.toggle("is-open", startMarkerPopoverOpen);
-        syncViewSelectionControls(startMarkerViewSelection, startMarkerPopoverButtons);
-    }
-
     function syncCameraMarkerUI(totalDuration) {
-        if (!editTrack) {
-            return;
-        }
-
-        const activeIds = new Set(cameraMarkers.map((marker) => marker.id));
-        for (const [markerId, node] of cameraMarkerNodes.entries()) {
-            if (activeIds.has(markerId)) {
-                continue;
-            }
-            node.shell.remove();
-            cameraMarkerNodes.delete(markerId);
-        }
-
-        for (const marker of cameraMarkers) {
-            normalizeCameraMarker(marker);
-            const node = cameraMarkerNodes.get(marker.id) || createCameraMarkerNode(marker);
-            if (!node) {
-                continue;
-            }
-
-            const ratio = totalDuration > 0 ? Math.min(Math.max(marker.time / totalDuration, 0), 1) : 0;
-            node.shell.style.setProperty("--player-marker-drag-offset-y", "0px");
-            node.shell.classList.remove("is-removing");
-            node.shell.style.left = `${ratio * 100}%`;
-            const cameraMarkerLabel = `Camera marker at ${formatClockTime(marker.time)}`;
-            node.button.setAttribute("aria-label", cameraMarkerLabel);
-            node.button.setAttribute("title", cameraMarkerLabel);
-            node.button.classList.toggle("is-open", activeCameraMarkerId === marker.id);
-            node.popover.hidden = activeCameraMarkerId !== marker.id;
-            node.popover.dataset.align = getCameraMarkerPopoverAlign(marker.time, totalDuration);
-            syncCameraMarkerPopover(marker, node);
-        }
+        markerUiController.syncCameraMarkerUI(totalDuration);
     }
 
     function addCameraMarker(nextTime) {
@@ -649,110 +392,6 @@ export function createEventPlayerEditingController({
         return applyPlaybackCameraMarker(currentMarker, eventTime, options);
     }
 
-    function bindStartMarkerInteraction() {
-        if (!startMarkerButton || !startMarkerPopover) {
-            return;
-        }
-
-        let draggedDuringPointerSequence = false;
-        let pointerStartX = 0;
-
-        startMarkerButton.addEventListener("click", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (draggedDuringPointerSequence) {
-                draggedDuringPointerSequence = false;
-                return;
-            }
-            activeCameraMarkerId = null;
-            startMarkerPopoverOpen = !startMarkerPopoverOpen;
-            onStateChanged();
-        });
-
-        startMarkerButton.addEventListener("pointerdown", (event) => {
-            if (event.button !== 0) {
-                return;
-            }
-            pointerStartX = event.clientX;
-            draggedDuringPointerSequence = false;
-            startMarkerButton.setPointerCapture(event.pointerId);
-        });
-
-        startMarkerButton.addEventListener("pointermove", (event) => {
-            if (!startMarkerButton.hasPointerCapture(event.pointerId)) {
-                return;
-            }
-
-            const deltaX = event.clientX - pointerStartX;
-            if (!draggedDuringPointerSequence && Math.abs(deltaX) < 4) {
-                return;
-            }
-
-            draggedDuringPointerSequence = true;
-            startMarkerPopoverOpen = false;
-            event.preventDefault();
-            updateTrimMarkerFromPointer("start", event.clientX);
-        });
-
-        const finishDragging = (event) => {
-            if (!startMarkerButton.hasPointerCapture(event.pointerId)) {
-                return;
-            }
-
-            startMarkerButton.releasePointerCapture(event.pointerId);
-            const deltaX = event.clientX - pointerStartX;
-            if (Math.abs(deltaX) < 4) {
-                return;
-            }
-
-            draggedDuringPointerSequence = true;
-            startMarkerPopoverOpen = false;
-            event.preventDefault();
-            updateTrimMarkerFromPointer("start", event.clientX);
-        };
-
-        const cancelDragging = (event) => {
-            if (!startMarkerButton.hasPointerCapture(event.pointerId)) {
-                return;
-            }
-
-            startMarkerButton.releasePointerCapture(event.pointerId);
-        };
-
-        startMarkerButton.addEventListener("pointerup", finishDragging);
-        startMarkerButton.addEventListener("pointercancel", cancelDragging);
-
-        startMarkerPopover.addEventListener("click", (event) => {
-            event.stopPropagation();
-            const target = event.target;
-            if (!(target instanceof Element)) {
-                return;
-            }
-            const controlButton = target.closest(".player-camera-overlay-button");
-            if (!(controlButton instanceof HTMLButtonElement)) {
-                return;
-            }
-
-            const nextLayout = controlButton.dataset.viewLayoutOption;
-            if (nextLayout) {
-                startMarkerViewSelection.layout = nextLayout;
-                normalizeViewSelection(startMarkerViewSelection);
-                onStateChanged();
-                schedulePlayerEditsPersistence();
-                return;
-            }
-
-            const nextCameraKey = controlButton.dataset.viewCameraTarget;
-            if (!nextCameraKey || !hasCameraPlaylist(nextCameraKey)) {
-                return;
-            }
-            startMarkerViewSelection.cameraKey = nextCameraKey;
-            normalizeViewSelection(startMarkerViewSelection);
-            onStateChanged();
-            schedulePlayerEditsPersistence();
-        });
-    }
-
     function getMinimumTrimGap(totalDuration) {
         return totalDuration >= 60 ? 60 : Math.max(0, totalDuration);
     }
@@ -821,7 +460,7 @@ export function createEventPlayerEditingController({
         startMarkerButton.setAttribute("title", startMarkerLabel);
         endMarkerButton.setAttribute("aria-label", endMarkerLabel);
         endMarkerButton.setAttribute("title", endMarkerLabel);
-        syncStartMarkerPopoverUI(totalDuration);
+        markerUiController.syncStartMarkerPopoverUI(totalDuration);
     }
 
     function setTrimMarkerTime(markerType, nextTime) {
@@ -910,7 +549,7 @@ export function createEventPlayerEditingController({
             });
         }
 
-        bindStartMarkerInteraction();
+        markerUiController.bindStartMarkerInteraction();
         bindTrimMarkerDrag(endMarkerButton, "end");
 
         documentObject.addEventListener("pointerdown", (event) => {
