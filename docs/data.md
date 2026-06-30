@@ -7,7 +7,7 @@ This document defines the current data terms and persisted records used by Sentr
 - Each event folder can contain `sentrymanager.json` with processing state, saved edits, normalized edit segments, and latest-render metadata.
 - Compatible clips can produce `*-telemetry.sei.bin` sidecars for frontend telemetry playback.
 - Render jobs live in the file-backed store under `.sentrymanager/render-jobs/<status>/<job-id>.json`.
-- Event export folders can contain `*.render-plan.json`, rendered `*.mp4` outputs, and per-segment intermediates.
+- Event export folders can contain the latest `*.render-plan.json`, the latest rendered `*.mp4` output, and in-flight per-segment intermediates.
 
 ## Event Processing Marker
 
@@ -182,6 +182,7 @@ Current implementation notes:
 
 - Jobs are persisted in `.sentrymanager/render-jobs` rather than a database.
 - Status values are `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
+- Each event keeps only its latest `succeeded` job record; older succeeded job files for that event are pruned when a new success is recorded.
 - Failure messages are sanitized before they are surfaced back to the UI.
 - The UI receives `statusUrl` and `downloadUrl` as serialized convenience fields.
 
@@ -199,6 +200,11 @@ Current fields:
 - `segmentCount`
 - `downloadFileName`
 - `missingCameras`
+
+Implementation notes:
+
+- After a successful render, the pipeline keeps only the newest output `.mp4` and matching `.render-plan.json` in the event `exports/` folder.
+- Timestamped per-segment intermediate directories are treated as temporary and are removed after a successful concat.
 
 The fallback metadata rebuilt from the `exports/` directory exposes:
 

@@ -105,7 +105,7 @@ def mark_render_job_succeeded(
     job_id: str,
     render_metadata: dict[str, object],
 ) -> dict[str, object] | None:
-    return _transition_job(
+    job = _transition_job(
         footage_root,
         job_id,
         next_status="succeeded",
@@ -113,6 +113,9 @@ def mark_render_job_succeeded(
         render_metadata=render_metadata,
         error_message=None,
     )
+    if job is not None:
+        _prune_succeeded_jobs_for_event(footage_root, job)
+    return job
 
 
 def mark_render_job_failed(
@@ -174,6 +177,24 @@ def _transition_job(
     _write_job_file(next_path, job)
     job_path.unlink(missing_ok=True)
     return job
+
+
+def _prune_succeeded_jobs_for_event(footage_root: Path, job: dict[str, object]) -> None:
+    event_id = str(job.get("eventId") or "")
+    job_id = str(job.get("id") or "")
+    if not event_id or not job_id:
+        return
+
+    succeeded_dir = _status_dir(_ensure_job_directories(footage_root), "succeeded")
+    for candidate_path in succeeded_dir.glob("*.json"):
+        if candidate_path.name == f"{job_id}.json":
+            continue
+        candidate_job = _read_job_file(candidate_path)
+        if candidate_job is None:
+            continue
+        if candidate_job.get("eventId") != event_id:
+            continue
+        candidate_path.unlink(missing_ok=True)
 
 
 def _ensure_job_directories(footage_root: Path) -> Path:

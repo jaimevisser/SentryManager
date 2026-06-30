@@ -34,4 +34,4 @@ This file tracks remaining delivery work. Implemented behavior belongs in the RE
 - [ ] Decide whether to ship an optional dedicated-worker compose override for heavier render workloads on top of the new single-container default.
 - [ ] Expand automated tests for discovery, playlist building, telemetry decoding, and remaining timeline/export paths.
 - [ ] Add health checks and failure reporting for stack deployment.
-- [ ] Document backup, retention, and storage expectations for footage, telemetry artifacts, and rendered exports.
+- [ ] Document backup, retention, and storage expectations for footage and telemetry artifacts.

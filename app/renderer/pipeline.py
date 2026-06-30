@@ -402,6 +402,7 @@ def render_event(
         ]
     )
 
+    _prune_successful_render_outputs(render_plan)
     return _build_render_result(render_plan)
 
 
@@ -456,6 +457,36 @@ def _build_render_result(render_plan: dict[str, object]) -> dict[str, object]:
             }
         ),
     }
+
+
+def _prune_successful_render_outputs(render_plan: dict[str, object]) -> None:
+    output_path = Path(str(render_plan["outputPath"]))
+    render_plan_path = Path(str(render_plan["renderPlanPath"]))
+    output_dir = output_path.parent
+
+    for candidate in output_dir.glob("*.mp4"):
+        if candidate == output_path:
+            continue
+        try:
+            candidate.unlink()
+        except OSError:
+            continue
+
+    for candidate in output_dir.glob("*.render-plan.json"):
+        if candidate == render_plan_path:
+            continue
+        try:
+            candidate.unlink()
+        except OSError:
+            continue
+
+    for candidate in output_dir.glob("*-segments"):
+        if not candidate.is_dir():
+            continue
+        try:
+            shutil.rmtree(candidate)
+        except OSError:
+            continue
 
 
 def get_latest_render_metadata(event_dir: Path) -> dict[str, object] | None:

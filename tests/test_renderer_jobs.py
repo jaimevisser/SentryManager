@@ -64,6 +64,74 @@ class RendererJobTests(unittest.TestCase):
             self.assertEqual("succeeded", stored_job["status"])
             self.assertEqual(render_metadata, stored_job["render"])
 
+    def test_new_success_prunes_older_succeeded_job_for_same_event(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            footage_root.mkdir(parents=True)
+
+            player_edits = {
+                "trimStartTime": 1.0,
+                "trimEndTime": 2.0,
+                "exportFormat": "hd",
+                "startMarkerView": {"layout": "single", "cameraKey": "front"},
+                "cameraMarkers": [],
+            }
+
+            first_job = enqueue_render_job(
+                footage_root=footage_root,
+                event_id="SavedClips/example",
+                player_edits=player_edits,
+                output_profile="hd",
+            )
+            claim_next_queued_job(footage_root)
+            mark_render_job_succeeded(
+                footage_root,
+                first_job["id"],
+                {
+                    "outputPath": "/data/TeslaCam/SavedClips/example/exports/first.mp4",
+                    "renderPlanPath": "/data/TeslaCam/SavedClips/example/exports/first.render-plan.json",
+                    "downloadFileName": "first.mp4",
+                },
+            )
+
+            other_event_job = enqueue_render_job(
+                footage_root=footage_root,
+                event_id="SavedClips/other",
+                player_edits=player_edits,
+                output_profile="hd",
+            )
+            claim_next_queued_job(footage_root)
+            mark_render_job_succeeded(
+                footage_root,
+                other_event_job["id"],
+                {
+                    "outputPath": "/data/TeslaCam/SavedClips/other/exports/other.mp4",
+                    "renderPlanPath": "/data/TeslaCam/SavedClips/other/exports/other.render-plan.json",
+                    "downloadFileName": "other.mp4",
+                },
+            )
+
+            second_job = enqueue_render_job(
+                footage_root=footage_root,
+                event_id="SavedClips/example",
+                player_edits=player_edits,
+                output_profile="hd",
+            )
+            claim_next_queued_job(footage_root)
+            mark_render_job_succeeded(
+                footage_root,
+                second_job["id"],
+                {
+                    "outputPath": "/data/TeslaCam/SavedClips/example/exports/second.mp4",
+                    "renderPlanPath": "/data/TeslaCam/SavedClips/example/exports/second.render-plan.json",
+                    "downloadFileName": "second.mp4",
+                },
+            )
+
+            self.assertIsNone(get_render_job(footage_root, first_job["id"]))
+            self.assertIsNotNone(get_render_job(footage_root, second_job["id"]))
+            self.assertIsNotNone(get_render_job(footage_root, other_event_job["id"]))
+
     def test_failed_job_stores_sanitized_error_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             footage_root = Path(temp_dir) / "TeslaCam"

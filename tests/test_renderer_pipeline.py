@@ -8,10 +8,74 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from app.renderer.pipeline import _draw_heading_cell, _get_layout_slot_specs, build_render_plan, get_normalized_edit_segments
+from app.renderer.pipeline import _draw_heading_cell, _get_layout_slot_specs, build_render_plan, get_normalized_edit_segments, render_event
 
 
 class RendererPipelineTests(unittest.TestCase):
+    def test_render_event_prunes_older_successful_exports(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_dir = footage_root / "SavedClips" / "2026-03-28_09-12-13"
+            output_dir = event_dir / "exports"
+            current_intermediate_dir = output_dir / "20260503T120314Z-hd-segments"
+            old_intermediate_dir = output_dir / "20260501T101010Z-hd-segments"
+            output_dir.mkdir(parents=True)
+            old_intermediate_dir.mkdir()
+            (old_intermediate_dir / "seg-001.mp4").write_text("old", encoding="utf-8")
+            old_output_path = output_dir / "2026-03-28_09-12-13-hd-20260501T101010Z.mp4"
+            old_plan_path = output_dir / "2026-03-28_09-12-13-hd-20260501T101010Z.render-plan.json"
+            old_output_path.write_text("old video", encoding="utf-8")
+            old_plan_path.write_text("{}", encoding="utf-8")
+            keep_path = output_dir / "keep.txt"
+            keep_path.write_text("keep", encoding="utf-8")
+
+            render_plan = {
+                "outputProfile": "hd",
+                "outputPath": str(output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.mp4"),
+                "intermediateDir": str(current_intermediate_dir),
+                "renderPlanPath": str(output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.render-plan.json"),
+                "segments": [
+                    {
+                        "segmentId": "seg-001",
+                        "missingCameras": ["left_pillar"],
+                    }
+                ],
+                "frameSize": {"width": 1920, "height": 1080},
+                "frameRate": 30.0,
+                "mediaIndex": [],
+            }
+
+            def fake_render_segments(**_: object) -> list[Path]:
+                current_intermediate_dir.mkdir(parents=True, exist_ok=True)
+                segment_output = current_intermediate_dir / "seg-001.mp4"
+                segment_output.write_text("segment", encoding="utf-8")
+                return [segment_output]
+
+            def fake_run_ffmpeg(command: list[str]) -> None:
+                Path(command[-1]).write_text("new video", encoding="utf-8")
+
+            with patch("app.renderer.pipeline.build_render_plan", return_value=render_plan):
+                with patch("app.renderer.pipeline._load_event_processing_state", return_value={}):
+                    with patch("app.renderer.pipeline._get_event_driver_assist_display", return_value=None):
+                        with patch("app.renderer.pipeline._render_plan_segments", side_effect=fake_render_segments):
+                            with patch("app.renderer.pipeline._run_ffmpeg", side_effect=fake_run_ffmpeg):
+                                result = render_event(
+                                    event_dir=event_dir,
+                                    footage_root=footage_root,
+                                    event_id="SavedClips/2026-03-28_09-12-13",
+                                    player_edits={},
+                                    output_profile="hd",
+                                )
+
+            self.assertEqual(str(output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.mp4"), result["outputPath"])
+            self.assertTrue((output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.mp4").is_file())
+            self.assertTrue((output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.render-plan.json").is_file())
+            self.assertFalse(old_output_path.exists())
+            self.assertFalse(old_plan_path.exists())
+            self.assertFalse(old_intermediate_dir.exists())
+            self.assertFalse(current_intermediate_dir.exists())
+            self.assertTrue(keep_path.is_file())
+
     def test_normalizes_marker_state_into_contiguous_segments(self) -> None:
         player_edits = {
             "trimStartTime": 10.0,

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="60 60 200 200" role="img" aria-label="Orange status light">
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="45%" r="48%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="discFill" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#612112"/>
+      <stop offset="70%" stop-color="#351008"/>
+      <stop offset="100%" stop-color="#180603"/>
+    </radialGradient>
+    <linearGradient id="spokeFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7528"/>
+      <stop offset="100%" stop-color="#ff362c"/>
+    </linearGradient>
+    <radialGradient id="redUnderlay" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff362c"/>
+      <stop offset="40%" stop-color="#ff362c"/>
+      <stop offset="84%" stop-color="#8d2412"/>
+      <stop offset="90%" stop-color="#000000"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <radialGradient id="spokeTopGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#c74b11" stop-opacity="0"/>
+      <stop offset="48%" stop-color="#d85b0f" stop-opacity="0.06"/>
+      <stop offset="78%" stop-color="#f07a16" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#ffb04a" stop-opacity="0.04"/>
+    </radialGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0c0303"/>
+      <stop offset="72%" stop-color="#140504"/>
+      <stop offset="100%" stop-color="#320b07"/>
+    </radialGradient>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.2"/>
+    </filter>
+    <clipPath id="discClip">
+      <circle cx="160" cy="160" r="93"/>
+    </clipPath>
+    <path id="spoke" d="M152.4 88 C152.4 85.515 155.802 83.5 160 83.5 C164.198 83.5 167.6 85.515 167.6 88 L163.5 131 C163.5 132.657 161.933 134 160 134 C158.067 134 156.5 132.657 156.5 131 Z" fill="url(#spokeFill)"/>
+  </defs>
+
+  <rect x="156" y="0" width="8" height="320" fill="#000000"/>
+  <circle cx="160" cy="160" r="94" fill="#000000"/>
+
+  <g clip-path="url(#discClip)" filter="url(#softGlow)">
+    <circle cx="160" cy="160" r="91" fill="url(#redUnderlay)"/>
+    <g opacity="0.98">
+      <use href="#spoke"/>
+      <use href="#spoke" transform="rotate(30 160 160)"/>
+      <use href="#spoke" transform="rotate(60 160 160)"/>
+      <use href="#spoke" transform="rotate(90 160 160)"/>
+      <use href="#spoke" transform="rotate(120 160 160)"/>
+      <use href="#spoke" transform="rotate(150 160 160)"/>
+      <use href="#spoke" transform="rotate(180 160 160)"/>
+      <use href="#spoke" transform="rotate(210 160 160)"/>
+      <use href="#spoke" transform="rotate(240 160 160)"/>
+      <use href="#spoke" transform="rotate(270 160 160)"/>
+      <use href="#spoke" transform="rotate(300 160 160)"/>
+      <use href="#spoke" transform="rotate(330 160 160)"/>
+    </g>
+    <circle cx="160" cy="160" r="76" fill="url(#spokeTopGlow)"/>
+    <circle cx="160" cy="160" r="20" fill="url(#centerGlow)"/>
+  </g>
+
+</svg>

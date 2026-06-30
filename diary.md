@@ -48,3 +48,12 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 14:03 Extracted the camera-marker and start-marker popover DOM behavior out of `app/frontend/static/js/event_player-page-editing.js` into new `app/frontend/static/js/event_player-page-marker-ui.js`, leaving the editing controller focused on edit state, playback marker logic, and trim rules instead of DOM construction plus pointer wiring.
 - 14:03 Validation: `node --check app/frontend/static/js/event_player-page-editing.js`, `node --check app/frontend/static/js/event_player-page-marker-ui.js`, and `npx playwright test tests/render_snapshot.spec.js --reporter=line --grep 'saved-brake'`.
 - 14:03 Size snapshot: `app/frontend/static/js/event_player-page-editing.js` is now 607 lines and `app/frontend/static/js/event_player-page-marker-ui.js` is 413 lines.
+
+### 2026-05-03
+- 16:37 Fixed successful render retention so `app/renderer/pipeline.py` now prunes older exported `.mp4` files, older `.render-plan.json` files, and all timestamped `*-segments` directories after a new export finishes.
+- 16:37 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.
+- 19:24 Fixed render-job retention so `app/renderer/jobs.py` now prunes older `succeeded` job records for the same event as soon as a newer success is recorded, while leaving other events' job history alone.
+- 19:24 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_jobs.py'`.
+- 20:01 Manually removed 61 historical `*-segments` directories from `data/TeslaCam/SavedClips/2026-03-28_09-12-13/exports` after confirming they predated the new automatic cleanup path and the running app container had not yet been rebuilt with it.
+- 20:04 Rebuilt and restarted the `app` service with `docker compose up -d --build app`, so the live container now runs the new export and succeeded-job cleanup code instead of the older baked image.
+- 12:37 Adjusted only `app/frontend/static/images/sentry-eye-small.svg` to use sparser 30-degree rays for better legibility at small sizes; restored `sentry-eye.svg` and `sentry-eye-background.svg` to the original dense spoke pattern after an over-broad first pass.

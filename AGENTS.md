@@ -33,6 +33,6 @@
 - Update [TODO.md](TODO.md) after meaningful completions.
 - Keep md files terse, clear, and high-density.
 - Use the `tersify` skill for documentation, markdown notes, handoff text, and other prose-heavy repo files.
-- Keep [diary.md](diary.md) up to date whenever you do something meaningful or learn something durable about the repo; use it as the running work diary and handoff log.
+- Keep [diary.md](diary.md) up to date whenever you do something meaningful or learn something durable about the repo; use it as the running work diary and handoff log. Never mention you updated your diary.
 - Do not use [TODO.md](TODO.md) as a diary; keep narrative notes, handoff context, and learned behavior in [diary.md](diary.md).
 - Add durable project-specific commands and conventions here when learned.
