@@ -57,3 +57,6 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 20:01 Manually removed 61 historical `*-segments` directories from `data/TeslaCam/SavedClips/2026-03-28_09-12-13/exports` after confirming they predated the new automatic cleanup path and the running app container had not yet been rebuilt with it.
 - 20:04 Rebuilt and restarted the `app` service with `docker compose up -d --build app`, so the live container now runs the new export and succeeded-job cleanup code instead of the older baked image.
 - 12:37 Adjusted only `app/frontend/static/images/sentry-eye-small.svg` to use sparser 30-degree rays for better legibility at small sizes; restored `sentry-eye.svg` and `sentry-eye-background.svg` to the original dense spoke pattern after an over-broad first pass.
+
+### 2026-06-30
+- 12:00 Added `.github/workflows/publish-docker.yml` so pushes to `master` publish `ghcr.io/jaimevisser/sentrymanager` with `latest` plus a `YYYY.MM.B` tag computed from existing GHCR tags for the current UTC month; workflow serialization avoids duplicate monthly build numbers on overlapping pushes.

@@ -1,0 +1,119 @@
+name: Publish Docker Image
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: publish-docker-master
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compute image version
+        id: version
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner.toLowerCase();
+            const repo = context.repo.repo.toLowerCase();
+            const image = `ghcr.io/${owner}/${repo}`;
+
+            const now = new Date();
+            const year = now.getUTCFullYear();
+            const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+            const prefix = `${year}.${month}.`;
+
+            const repoInfo = await github.rest.repos.get(context.repo);
+            const ownerType = repoInfo.data.owner.type;
+            const tags = new Set();
+            const perPage = 100;
+
+            for (let page = 1; page < 100; page += 1) {
+              let response;
+              try {
+                if (ownerType === 'Organization') {
+                  response = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
+                    org: context.repo.owner,
+                    package_type: 'container',
+                    package_name: repo,
+                    per_page: perPage,
+                    page,
+                  });
+                } else {
+                  response = await github.rest.packages.getAllPackageVersionsForPackageOwnedByUser({
+                    username: context.repo.owner,
+                    package_type: 'container',
+                    package_name: repo,
+                    per_page: perPage,
+                    page,
+                  });
+                }
+              } catch (error) {
+                if (error.status === 404) {
+                  break;
+                }
+                throw error;
+              }
+
+              const versions = response.data;
+              if (!versions.length) {
+                break;
+              }
+
+              for (const version of versions) {
+                for (const tag of version.metadata?.container?.tags || []) {
+                  tags.add(tag);
+                }
+              }
+
+              if (versions.length < perPage) {
+                break;
+              }
+            }
+
+            const builds = [...tags]
+              .filter((tag) => /^\d{4}\.\d{2}\.\d+$/.test(tag) && tag.startsWith(prefix))
+              .map((tag) => Number(tag.slice(prefix.length)))
+              .filter((value) => Number.isInteger(value));
+
+            const nextBuild = builds.length ? Math.max(...builds) + 1 : 1;
+            const version = `${year}.${month}.${nextBuild}`;
+
+            core.setOutput('image', image);
+            core.setOutput('version', version);
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.version.outputs.image }}:${{ steps.version.outputs.version }}
+            ${{ steps.version.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}

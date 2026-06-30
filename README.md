@@ -174,6 +174,15 @@ docker compose config
 docker build -t sentrymanager .
 ```
 
+## Published Image
+
+Pushes to `master` trigger GitHub Actions to build and publish the Docker image to `ghcr.io/jaimevisser/sentrymanager`.
+
+Published tags are:
+
+- `latest`
+- `YYYY.MM.B`, where `B` auto-increments from existing tags in the same UTC month
+
 ## Related Docs
 
 - `docs/brief.md`: product scope and user workflow
