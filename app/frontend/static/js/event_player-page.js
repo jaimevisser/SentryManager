@@ -262,6 +262,10 @@ export function initEventPlayer() {
         return editingController ? editingController.maybeApplyCurrentPlaybackViewMarker(eventTime, options) : false;
     }
 
+    function noteManualViewSelectionOverride(eventTime) {
+        editingController?.noteManualViewSelectionOverride(eventTime);
+    }
+
     function getTrimStartTime() {
         return editingController ? editingController.getTrimStartTime() : 0;
     }
@@ -547,6 +551,7 @@ export function initEventPlayer() {
             if (!nextLayout) {
                 return;
             }
+            noteManualViewSelectionOverride(getCurrentEventTime());
             switchLayout(nextLayout);
         });
     }
@@ -557,6 +562,7 @@ export function initEventPlayer() {
             if (!nextCameraKey) {
                 return;
             }
+            noteManualViewSelectionOverride(getCurrentEventTime());
             switchCamera(nextCameraKey);
         });
     }

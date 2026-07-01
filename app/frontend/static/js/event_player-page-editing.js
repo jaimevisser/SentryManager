@@ -37,6 +37,8 @@ export function createEventPlayerEditingController({
     let startMarkerPopoverOpen = false;
     let lastPlaybackEventTime = null;
     let activePlaybackCameraMarkerId = null;
+    let manualViewOverrideMarkerId = null;
+    let manualViewOverrideActive = false;
 
     const startMarkerViewSelection = {
         layout: getActiveLayout(),
@@ -290,6 +292,11 @@ export function createEventPlayerEditingController({
         activePlaybackCameraMarkerId = getLatestCameraMarkerAtOrBefore(eventTime)?.id ?? null;
     }
 
+    function noteManualViewSelectionOverride(eventTime) {
+        manualViewOverrideMarkerId = getLatestCameraMarkerAtOrBefore(eventTime)?.id ?? null;
+        manualViewOverrideActive = manualViewOverrideMarkerId !== null;
+    }
+
     function doesViewSelectionMatchCurrentView(selection) {
         normalizeViewSelection(selection);
         if (selection.layout !== getActiveLayout()) {
@@ -346,6 +353,8 @@ export function createEventPlayerEditingController({
         }
 
         normalizeCameraMarker(marker);
+        manualViewOverrideActive = false;
+        manualViewOverrideMarkerId = null;
         activePlaybackCameraMarkerId = marker.id;
         const autoplay = typeof options.autoplay === "boolean" ? options.autoplay : true;
         return applyViewSelection(marker.layout, marker.cameraKey, { eventTime, autoplay });
@@ -380,8 +389,20 @@ export function createEventPlayerEditingController({
     function maybeApplyCurrentPlaybackViewMarker(eventTime, options = {}) {
         const currentMarker = getLatestCameraMarkerAtOrBefore(eventTime);
         if (!currentMarker) {
+            manualViewOverrideActive = false;
+            manualViewOverrideMarkerId = null;
             syncPlaybackMarkerCheckpoint(eventTime);
             return false;
+        }
+
+        if (manualViewOverrideActive && currentMarker.id === manualViewOverrideMarkerId) {
+            syncPlaybackMarkerCheckpoint(eventTime);
+            return false;
+        }
+
+        if (manualViewOverrideActive && currentMarker.id !== manualViewOverrideMarkerId) {
+            manualViewOverrideActive = false;
+            manualViewOverrideMarkerId = null;
         }
 
         if (currentMarker.id === activePlaybackCameraMarkerId && doesViewSelectionMatchCurrentView(currentMarker)) {
@@ -603,6 +624,7 @@ export function createEventPlayerEditingController({
         syncPlaybackMarkerCheckpoint,
         maybeApplyPlaybackCameraMarker,
         maybeApplyCurrentPlaybackViewMarker,
+        noteManualViewSelectionOverride,
         bindEditingControls,
     };
 }
