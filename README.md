@@ -70,11 +70,8 @@ The current workflow is:
 ├── Dockerfile
 ├── README.md
 ├── TODO.md
-├── config/
-│   └── general/config.example.yaml
 ├── app/
 │   ├── __init__.py
-│   ├── config.py
 │   ├── frontend/
 │   │   ├── app.py
 │   │   ├── static/
@@ -101,7 +98,6 @@ The current workflow is:
 
 The Compose file mounts these host folders into the container:
 
-- `./config` to `/app/config`
 - `./data/TeslaCam` to `/data/TeslaCam`
 
 `/data/TeslaCam` must be writable by the container so the app can store segment-level `-telemetry.sei.bin` files, `sentrymanager.json` processing data, render plans, and rendered exports inside event folders.
@@ -124,33 +120,12 @@ docker compose down
 
 ## Environment Variables
 
-- `APP_ENV`: Logical environment name for the app. Defaults to `development`.
 - `TESLACAM_ROOT`: In-container path to the TeslaCam footage root. Defaults to `/data/TeslaCam`.
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
 - `RENDER_WORKER_ENABLED`: Starts the background render worker thread inside the app container. Defaults to `true`.
 - `RENDER_WORKER_POLL_INTERVAL_SECONDS`: Poll interval for the in-container render worker. Defaults to `1.0`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
-
-## Configuration
-
-The app now follows the same basic pattern used in 3dfabs: a checked-in example YAML under `config/`, plus an optional ignored local override file, loaded into a typed settings object at startup and then copied into Flask config.
-
-Tracked defaults live in `config/general/config.example.yaml`:
-
-```yaml
-app_env: development
-```
-
-For local or test-specific overrides, create `config/general/config.yaml`. It is ignored by git and layered on top of the example config at runtime.
-
-The current config surface includes:
-
-- app environment selection
-
-Path settings stay in environment variables and Compose mounts rather than the YAML config.
-
-If a YAML key is omitted, the matching environment variable is used as a fallback.
 
 ## TeslaCam Assumptions
 

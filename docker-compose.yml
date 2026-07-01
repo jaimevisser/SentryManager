@@ -4,7 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      APP_ENV: ${APP_ENV:-development}
       PORT: 8080
       RENDER_WORKER_ENABLED: ${RENDER_WORKER_ENABLED:-true}
       RENDER_WORKER_POLL_INTERVAL_SECONDS: ${RENDER_WORKER_POLL_INTERVAL_SECONDS:-1.0}
@@ -12,6 +11,5 @@ services:
     ports:
       - "8765:8080"
     volumes:
-      - ./config:/app/config:ro
       - ${TESLACAM_PATH:-./data/TeslaCam}:/data/TeslaCam
     restart: unless-stopped

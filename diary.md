@@ -60,3 +60,6 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 
 ### 2026-06-30
 - 12:00 Added `.github/workflows/publish-docker.yml` so pushes to `master` publish `ghcr.io/jaimevisser/sentrymanager` with `latest` plus a `YYYY.MM.B` tag computed from existing GHCR tags for the current UTC month; workflow serialization avoids duplicate monthly build numbers on overlapping pushes.
+
+### 2026-07-01
+- 00:05 Removed the unused YAML config subsystem entirely: deleted `app/config.py` plus `config/general/*`, dropped the Compose config mount and Docker `COPY config`, removed `PyYAML`, and switched app startup back to a direct `TESLACAM_ROOT` environment default.

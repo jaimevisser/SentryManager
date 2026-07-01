@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 import math
+import os
 from pathlib import Path
 import queue
 import shutil
@@ -12,7 +13,6 @@ import threading
 
 from flask import Flask, abort, url_for
 
-from ..config import apply_settings
 from ..renderer import (
     ACTIVE_JOB_STATUSES,
     enqueue_render_job,
@@ -270,7 +270,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    apply_settings(app)
+    app.config["TESLACAM_ROOT"] = os.getenv("TESLACAM_ROOT", "/data/TeslaCam")
     start_event_processing_worker()
     start_render_worker_thread(get_footage_root(app))
     register_routes(app, sys.modules[__name__])
