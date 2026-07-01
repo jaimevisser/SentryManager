@@ -91,10 +91,10 @@ class RendererPipelineTests(unittest.TestCase):
                 "right": None,
                 "topLeft": (0.0, 0.0, 220.0, 160.0),
             },
+            segment_time=0.0,
             telemetry_point=None,
             event_driver_assist_display=None,
-            event_date_label="27-03-2026",
-            event_time_label="14:37",
+            event_base_timestamp=None,
             event_location_label="Parallelweg, Oss",
         )
 

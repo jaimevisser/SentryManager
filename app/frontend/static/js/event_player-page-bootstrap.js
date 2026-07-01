@@ -47,6 +47,7 @@ export function loadEventPlayerBootstrap(documentObject, normalizeDriverAssistDi
         eventHasSteeringAngleData: Boolean(eventFlags?.hasSteeringAngleData),
         eventDriverAssistDisplay: normalizeDriverAssistDisplay(eventFlags?.driverAssistDisplay),
         eventMarkerTime: getFiniteNumberOrNull(playlistConfig?.eventMarkerTime),
+        eventTimestampIso: getStringOrNull(playlistConfig?.eventTimestampIso),
         initialStartTime: initialStartTime === null ? 0 : Math.max(0, initialStartTime),
     };
 }
@@ -85,6 +86,8 @@ export function queryEventPlayerNodes(documentObject) {
         cameraButtons: Array.from(documentObject.querySelectorAll("[data-camera-target]")),
         stageSurface: documentObject.querySelector("[data-player-stage-surface]"),
         viewFrame: documentObject.querySelector("[data-player-view-frame]"),
+        eventDateNode: documentObject.querySelector("[data-player-event-date]"),
+        eventTimeNode: documentObject.querySelector("[data-player-event-time]"),
         stageSafeZones: {
             left: documentObject.querySelector('[data-player-safe-zone="left"]'),
             right: documentObject.querySelector('[data-player-safe-zone="right"]'),

@@ -78,3 +78,15 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 08:12 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'` and `npx playwright test tests/render_snapshot.spec.js --reporter=line --grep 'saved-left-blinker'`.
 - 08:18 Removed the leftover empty gray band above the player stage by clearing `margin-top` on `.player-stage-single`; validated with `docker compose up -d --build app` and `npx playwright test tests/location_safe_zone.spec.js --reporter=line`.
 - 08:24 Removed the final top spacing from `.page-shell-full` so the fullscreen player sits flush under the header; revalidated with `docker compose up -d --build app` and `npx playwright test tests/location_safe_zone.spec.js --reporter=line`.
+- 08:41 Changed the top-left date/time overlay to track timeline progress instead of staying fixed: viewer now computes labels from `eventTimestampIso + current event time`, and export overlays now compute labels per frame from base event timestamp plus timeline offset.
+- 08:41 Validation: `docker compose up -d --build app`, `npx playwright test tests/location_safe_zone.spec.js --reporter=line`, and `python3 -m compileall app`.
+- 08:41 Renderer test environment note: `docker compose run --rm app pytest ...` and `docker compose run --rm app python -m pytest ...` both failed because `pytest` is not installed in the app image.
+- 08:45 Renderer validation completed with mounted-source unittest path: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'` (9 passed).
+- 09:02 Added `sentry-eye-small.svg` to the export-only top-left safe zone, centered above the date/time/location stack in renderer output while leaving stage/viewer overlays unchanged.
+- 09:02 Validation: `docker compose up -d --build app` and `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.
+- 09:06 Increased the export top-left eye icon target size to 50% of safe-zone width while preserving aspect ratio through the existing renderer SVG scaling path.
+- 09:06 Validation: `docker compose up -d --build app` and `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.
+- 09:10 Corrected the export top-left icon asset from `sentry-eye-small.svg` to `sentry-eye.svg` after visual review feedback; sizing remains 50% of safe-zone width.
+- 09:10 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.
+- 09:14 Added a centered `SentryManager` label above the export top-left eye icon while keeping the date/time/location stack below it.
+- 09:14 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.

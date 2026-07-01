@@ -37,6 +37,7 @@ export function initEventPlayer() {
         eventHasAutopilotActivity,
         eventHasSteeringAngleData,
         eventMarkerTime,
+        eventTimestampIso,
         initialRenderJob,
         initialStartTime,
         latestRenderMetadata,
@@ -67,7 +68,9 @@ export function initEventPlayer() {
         editTrack,
         editTrackFill,
         endMarkerButton,
+        eventDateNode,
         eventMarker,
+        eventTimeNode,
         exportFormatButtons,
         exportFormatToggle,
         fsdPercentNode,
@@ -107,6 +110,13 @@ export function initEventPlayer() {
 
     const durationCache = new Map();
     const telemetryCache = new Map();
+    const baseEventTimestampMs = (() => {
+        if (typeof eventTimestampIso !== "string" || !eventTimestampIso.trim()) {
+            return null;
+        }
+        const parsedMs = Date.parse(eventTimestampIso);
+        return Number.isFinite(parsedMs) ? parsedMs : null;
+    })();
 
     function clipHasTelemetry(clip) {
         return Boolean(clip?.hasTelemetry);
@@ -216,6 +226,19 @@ export function initEventPlayer() {
             return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
         }
         return `${minutes}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function formatOverlayDateLabel(date) {
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = String(date.getFullYear());
+        return `${day}-${month}-${year}`;
+    }
+
+    function formatOverlayTimeLabel(date) {
+        const hours = String(date.getHours()).padStart(2, "0");
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+        return `${hours}:${minutes}`;
     }
 
     function getClipStart(index) {
@@ -355,6 +378,9 @@ export function initEventPlayer() {
 
     function syncTimelineUI() {
         const eventTime = getCurrentEventTime();
+        const overlayEventTime = (typeof pendingEventTime === "number" && Number.isFinite(pendingEventTime))
+            ? pendingEventTime
+            : eventTime;
         const totalDuration = getTotalDuration();
         const activeClip = playlist[activeIndex] || null;
 
@@ -365,6 +391,15 @@ export function initEventPlayer() {
         }
         if (currentTimeNode) {
             currentTimeNode.textContent = formatClockTime(eventTime);
+        }
+        if (baseEventTimestampMs !== null) {
+            const overlayDate = new Date(baseEventTimestampMs + (Math.max(0, overlayEventTime) * 1000));
+            if (eventDateNode) {
+                eventDateNode.textContent = formatOverlayDateLabel(overlayDate);
+            }
+            if (eventTimeNode) {
+                eventTimeNode.textContent = formatOverlayTimeLabel(overlayDate);
+            }
         }
         if (totalTimeNode) {
             totalTimeNode.textContent = totalDuration > 0 ? formatClockTime(totalDuration) : "--:--";

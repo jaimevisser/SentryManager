@@ -21,6 +21,7 @@ This file tracks remaining delivery work. Implemented behavior belongs in the RE
 ## Export Pipeline
 
 - [ ] Finish browser/export parity for trims, camera switches, multi-camera layouts, and stage-safe overlays.
+- [ ] Add an export-frame regression that proves top-left date/time advances with timeline offset instead of remaining fixed at event start.
 - [ ] Generate background-rendered telemetry corner overlay assets that can be stitched into the final export timeline.
 - [ ] Composite telemetry corner overlays with the source-camera layout render so exported video preserves the viewer telemetry treatment.
 - [ ] Add export progress reporting and output file management.

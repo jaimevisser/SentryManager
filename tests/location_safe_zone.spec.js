@@ -49,9 +49,23 @@ test('location metadata appears in the top-left stage safe zone', async ({ page 
   const dateText = (await dateNode.textContent()) || '';
   const timeText = (await timeNode.textContent()) || '';
 
+  await page.evaluate(async ({ segmentKey, clipTimeSeconds }) => {
+    const api = window.__SENTRYMANAGER_TEST_API;
+    await api.seekSnapshotFrame({
+      layout: 'single',
+      cameraKey: 'front',
+      segmentKey,
+      clipTimeSeconds,
+    });
+  }, { segmentKey: SEGMENT_KEY, clipTimeSeconds: 55 });
+
+  const advancedTimeText = (await timeNode.textContent()) || '';
+
   expect(snapshotState.safeZones.topLeft).toBeTruthy();
   expect(dateText.trim()).toMatch(/^\d{2}-\d{2}-\d{4}$/);
   expect(timeText.trim()).toMatch(/^\d{2}:\d{2}$/);
+  expect(advancedTimeText.trim()).toMatch(/^\d{2}:\d{2}$/);
+  expect(advancedTimeText.trim()).not.toEqual(timeText.trim());
   expect(locationText.trim().length).toBeGreaterThan(0);
 });
 

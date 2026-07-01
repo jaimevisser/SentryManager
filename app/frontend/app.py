@@ -244,6 +244,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     active_render_job = get_latest_event_render_job(footage_root, event_summary.path, statuses=ACTIVE_JOB_STATUSES)
     overlay_date_label = event_summary.timestamp.strftime("%d-%m-%Y") if event_summary.timestamp else None
     overlay_time_label = event_summary.timestamp.strftime("%H:%M") if event_summary.timestamp else None
+    event_timestamp_iso = event_summary.timestamp.isoformat() if event_summary.timestamp else None
 
     return {
         "event": event_summary,
@@ -264,6 +265,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
         "latest_render": latest_render,
         "overlay_date_label": overlay_date_label,
         "overlay_time_label": overlay_time_label,
+        "event_timestamp_iso": event_timestamp_iso,
         "page_delete_event_path": event_summary.path,
         "page_delete_redirect_url": url_for("index"),
         "page_title": f"{event_summary.day_label} Player | SentryManager",

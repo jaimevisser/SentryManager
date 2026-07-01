@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import io
 import json
 from fractions import Fraction
@@ -57,6 +57,7 @@ BASE_RENDER_WIDTH = 1920
 STAGE_PADDING_AT_BASE_WIDTH = 14.0
 DOUBLE_LAYOUT_GAP_AT_BASE_WIDTH = 10.0
 FRONTEND_ASSET_ROOT = Path(__file__).resolve().parent.parent / "frontend" / "static"
+IMAGE_ASSET_ROOT = FRONTEND_ASSET_ROOT / "images"
 FONT_CANDIDATES = (
     str(FRONTEND_ASSET_ROOT / "fonts" / "tektur-latin.woff2"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -369,7 +370,7 @@ def render_event(
         for clip in render_plan["mediaIndex"]
     }
     event_payload = _load_event_payload(event_dir)
-    event_date_label, event_time_label = _get_event_datetime_labels(event_payload, event_dir)
+    event_base_timestamp = _get_event_base_timestamp(event_payload, event_dir)
     event_location_label = _get_event_location_label(event_payload)
     event_processing_state = _load_event_processing_state(event_dir)
     event_driver_assist_display = _get_event_driver_assist_display(event_processing_state)
@@ -379,8 +380,7 @@ def render_event(
         render_plan=render_plan,
         event_dir=event_dir,
         event_driver_assist_display=event_driver_assist_display,
-        event_date_label=event_date_label,
-        event_time_label=event_time_label,
+        event_base_timestamp=event_base_timestamp,
         event_location_label=event_location_label,
         media_clips_by_path=media_clips_by_path,
         intermediate_dir=intermediate_dir,
@@ -426,8 +426,7 @@ def _render_plan_segments(
     render_plan: dict[str, object],
     event_dir: Path,
     event_driver_assist_display: dict[str, object] | None,
-    event_date_label: str | None,
-    event_time_label: str | None,
+    event_base_timestamp: datetime | None,
     event_location_label: str | None,
     media_clips_by_path: dict[str, dict[str, object]],
     intermediate_dir: Path,
@@ -439,8 +438,7 @@ def _render_plan_segments(
             segment=segment,
             event_dir=event_dir,
             event_driver_assist_display=event_driver_assist_display,
-            event_date_label=event_date_label,
-            event_time_label=event_time_label,
+            event_base_timestamp=event_base_timestamp,
             event_location_label=event_location_label,
             frame_size=render_plan["frameSize"],
             frame_rate=float(render_plan["frameRate"]),
@@ -775,8 +773,7 @@ def _render_segment(
     segment: dict[str, object],
     event_dir: Path,
     event_driver_assist_display: dict[str, object] | None,
-    event_date_label: str | None,
-    event_time_label: str | None,
+    event_base_timestamp: datetime | None,
     event_location_label: str | None,
     frame_size: dict[str, int],
     frame_rate: float,
@@ -888,8 +885,7 @@ def _render_segment(
 
     if (
         not segment.get("overlay", {}).get("telemetry")
-        and not event_date_label
-        and not event_time_label
+        and event_base_timestamp is None
         and not event_location_label
     ):
         shutil.move(str(base_output_path), str(output_path))
@@ -899,8 +895,7 @@ def _render_segment(
         segment=segment,
         event_dir=event_dir,
         event_driver_assist_display=event_driver_assist_display,
-        event_date_label=event_date_label,
-        event_time_label=event_time_label,
+        event_base_timestamp=event_base_timestamp,
         event_location_label=event_location_label,
         frame_size=frame_size,
         frame_rate=frame_rate,
@@ -947,8 +942,7 @@ def _render_segment_telemetry_overlay(
     segment: dict[str, object],
     event_dir: Path,
     event_driver_assist_display: dict[str, object] | None,
-    event_date_label: str | None,
-    event_time_label: str | None,
+    event_base_timestamp: datetime | None,
     event_location_label: str | None,
     frame_size: dict[str, int],
     frame_rate: float,
@@ -965,8 +959,7 @@ def _render_segment_telemetry_overlay(
         and safe_zones["right"] is None
         and safe_zones["topLeft"] is None
         and event_driver_assist_display is None
-        and not event_date_label
-        and not event_time_label
+        and event_base_timestamp is None
         and not event_location_label
     ):
         return False
@@ -1005,10 +998,10 @@ def _render_segment_telemetry_overlay(
             overlay_frame, has_overlay = _draw_telemetry_frame(
                 frame_size=frame_size,
                 safe_zones=safe_zones,
+                segment_time=segment_time,
                 telemetry_point=telemetry_point,
                 event_driver_assist_display=event_driver_assist_display,
-                event_date_label=event_date_label,
-                event_time_label=event_time_label,
+                event_base_timestamp=event_base_timestamp,
                 event_location_label=event_location_label,
             )
             rendered_any_overlay = rendered_any_overlay or has_overlay
@@ -1085,10 +1078,10 @@ def _resolve_timeline_point(segment_time: float, timeline_map: list[dict[str, ob
 def _draw_telemetry_frame(
     frame_size: dict[str, int],
     safe_zones: dict[str, tuple[float, float, float, float] | None],
+    segment_time: float,
     telemetry_point: dict[str, object] | None,
     event_driver_assist_display: dict[str, object] | None,
-    event_date_label: str | None,
-    event_time_label: str | None,
+    event_base_timestamp: datetime | None,
     event_location_label: str | None,
 ) -> tuple[Image.Image, bool]:
     image = Image.new("RGBA", (int(frame_size["width"]), int(frame_size["height"])), (0, 0, 0, 0))
@@ -1108,7 +1101,12 @@ def _draw_telemetry_frame(
     if right_zone is not None:
         has_overlay = _draw_right_safe_zone(image, draw, right_zone, sample, event_driver_assist_display) or has_overlay
     if top_left_zone is not None:
+        timeline_offset_seconds = float(segment_time)
+        if telemetry_point is not None and isinstance(telemetry_point.get("eventTime"), int | float):
+            timeline_offset_seconds = float(telemetry_point["eventTime"])
+        event_date_label, event_time_label = _get_overlay_datetime_labels(event_base_timestamp, timeline_offset_seconds)
         has_overlay = _draw_top_left_safe_zone(
+            image,
             draw,
             top_left_zone,
             event_date_label,
@@ -1119,6 +1117,7 @@ def _draw_telemetry_frame(
 
 
 def _draw_top_left_safe_zone(
+    image: Image.Image,
     draw: ImageDraw.ImageDraw,
     rect: tuple[float, float, float, float],
     event_date_label: str | None,
@@ -1147,6 +1146,48 @@ def _draw_top_left_safe_zone(
     if inner_right - inner_left < 1 or inner_bottom - inner_top < 1:
         return False
 
+    title_font = _fit_safe_zone_text_font(rect, 0.09, 0.08)
+    title_letter_spacing = _get_text_letter_spacing(title_font, 0.03)
+    title_text = _truncate_text_to_width(draw, "SentryManager", title_font, inner_right - inner_left, title_letter_spacing)
+    title_height = _measure_tracked_text(draw, "SentryManager", title_font, title_letter_spacing)[1]
+    title_rect = (
+        inner_left,
+        inner_top,
+        inner_right,
+        min(inner_bottom, inner_top + title_height),
+    )
+    if title_text:
+        _draw_centered_text(
+            draw,
+            title_rect,
+            title_text,
+            title_font,
+            fill=(255, 255, 255, 255),
+            shadow=False,
+            letter_spacing=title_letter_spacing,
+        )
+
+    title_gap = max(_scale_stage_pixels(2.0, width), height * 0.01)
+    icon_top = title_rect[3] + title_gap if title_text else inner_top
+    icon_size = max(14, int(round(width * 0.5)))
+    icon_rect = (
+        inner_left,
+        icon_top,
+        inner_right,
+        min(inner_bottom, icon_top + icon_size),
+    )
+    icon_rendered = _paste_centered_svg_icon(
+        image,
+        icon_rect,
+        "sentry-eye.svg",
+        icon_size,
+        asset_root=IMAGE_ASSET_ROOT,
+    )
+    icon_gap = max(_scale_stage_pixels(2.0, width), height * 0.01)
+    text_top_limit = icon_rect[3] + icon_gap if icon_rendered else icon_top
+    if text_top_limit >= inner_bottom:
+        text_top_limit = inner_top
+
     font = _fit_safe_zone_text_font(rect, 0.105, 0.095)
     letter_spacing = _get_text_letter_spacing(font, 0.02)
     fitted_lines = [
@@ -1161,7 +1202,7 @@ def _draw_top_left_safe_zone(
     line_height = _measure_tracked_text(draw, "00", font, letter_spacing)[1]
     block_height = (line_height * len(fitted_lines)) + (line_gap * max(0, len(fitted_lines) - 1))
     block_bottom = inner_bottom
-    current_top = block_bottom - block_height
+    current_top = max(text_top_limit, block_bottom - block_height)
     for line in fitted_lines:
         line_rect = (
             inner_left,
@@ -1321,10 +1362,11 @@ def _paste_centered_svg_icon(
     icon_name: str,
     target_size: int,
     rotation_degrees: float = 0.0,
+    asset_root: Path = MDI_ASSET_ROOT,
 ) -> bool:
     left, top, right, bottom = rect
     icon_size = max(12, min(target_size, int(round(min(right - left, bottom - top)))))
-    icon = _load_svg_icon(icon_name, icon_size)
+    icon = _load_svg_icon(icon_name, icon_size, asset_root=asset_root)
     if icon is None:
         return False
     if abs(rotation_degrees) > 0.1:
@@ -1402,13 +1444,13 @@ def _draw_speed_value(
     _draw_text_with_shadow(draw, (x + number_width + gap, unit_y), unit_text, unit_font, letter_spacing=unit_letter_spacing)
 
 
-def _load_svg_icon(icon_name: str, target_size: int) -> Image.Image | None:
-    cache_key = (icon_name, target_size)
+def _load_svg_icon(icon_name: str, target_size: int, asset_root: Path = MDI_ASSET_ROOT) -> Image.Image | None:
+    cache_key = (f"{asset_root}:{icon_name}", target_size)
     cached_icon = SVG_ICON_CACHE.get(cache_key)
     if cache_key in SVG_ICON_CACHE:
         return cached_icon.copy() if cached_icon is not None else None
 
-    icon_path = MDI_ASSET_ROOT / icon_name
+    icon_path = asset_root / icon_name
     if not icon_path.is_file():
         SVG_ICON_CACHE[cache_key] = None
         return None
@@ -1852,7 +1894,7 @@ def _get_event_location_label(payload: dict[str, object] | None) -> str | None:
     return ", ".join(location_parts)
 
 
-def _get_event_datetime_labels(payload: dict[str, object] | None, event_dir: Path) -> tuple[str | None, str | None]:
+def _get_event_base_timestamp(payload: dict[str, object] | None, event_dir: Path) -> datetime | None:
     timestamp = None
     if isinstance(payload, dict):
         raw_timestamp = payload.get("timestamp")
@@ -1865,10 +1907,16 @@ def _get_event_datetime_labels(payload: dict[str, object] | None, event_dir: Pat
     if timestamp is None:
         timestamp = _infer_event_timestamp(event_dir.name)
 
-    if timestamp is None:
+    return timestamp
+
+
+def _get_overlay_datetime_labels(base_timestamp: datetime | None, offset_seconds: float) -> tuple[str | None, str | None]:
+    if base_timestamp is None:
         return None, None
 
-    return timestamp.strftime("%d-%m-%Y"), timestamp.strftime("%H:%M")
+    timeline_seconds = max(0, float(offset_seconds))
+    overlay_timestamp = base_timestamp + timedelta(seconds=timeline_seconds)
+    return overlay_timestamp.strftime("%d-%m-%Y"), overlay_timestamp.strftime("%H:%M")
 
 
 def _coerce_optional_percentage(value: object) -> float | None:
