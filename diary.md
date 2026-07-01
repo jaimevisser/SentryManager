@@ -90,3 +90,4 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 09:10 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.
 - 09:14 Added a centered `SentryManager` label above the export top-left eye icon while keeping the date/time/location stack below it.
 - 09:14 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.
+- 21:21 Updated `.github/workflows/publish-docker.yml` to publish a multi-arch GHCR image manifest for `linux/amd64`, `linux/arm64`, and `linux/arm/v7` (instead of amd64-only), adding QEMU setup so ARM variants can be built on the GitHub-hosted runner.
