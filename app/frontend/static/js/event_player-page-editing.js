@@ -414,7 +414,7 @@ export function createEventPlayerEditingController({
     }
 
     function getMinimumTrimGap(totalDuration) {
-        return totalDuration >= 60 ? 60 : Math.max(0, totalDuration);
+        return totalDuration >= 5 ? 5 : Math.max(0, totalDuration);
     }
 
     function ensureTrimRange(totalDuration) {

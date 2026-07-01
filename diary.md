@@ -63,3 +63,5 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 
 ### 2026-07-01
 - 00:05 Removed the unused YAML config subsystem entirely: deleted `app/config.py` plus `config/general/*`, dropped the Compose config mount and Docker `COPY config`, removed `PyYAML`, and switched app startup back to a direct `TESLACAM_ROOT` environment default.
+- 06:20 Reduced the player trim minimum from 60 seconds to 5 seconds in `app/frontend/static/js/event_player-page-editing.js`, while keeping the existing shorter-than-total-duration fallback for events under the minimum.
+- 06:20 Validation: `node --check app/frontend/static/js/event_player-page-editing.js` and `npx playwright test tests/trim_duration.spec.js --reporter=line`.
