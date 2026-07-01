@@ -1,6 +1,7 @@
 import {
     getBottomCornerSafeRect,
     getContainedVideoRect,
+    getTopCornerSafeRect,
     getVideoAspectRatio,
 } from "./event_player-page-helpers.js";
 
@@ -43,6 +44,7 @@ export function createStageSafeZoneController({
         if (!(masterAspectRatio > 0)) {
             applyStageSafeZone(stageSafeZones.left, null);
             applyStageSafeZone(stageSafeZones.right, null);
+            applyStageSafeZone(stageSafeZones.topLeft, null);
             return;
         }
 
@@ -51,6 +53,7 @@ export function createStageSafeZoneController({
         if (!(frameWidth > 0) || !(frameHeight > 0)) {
             applyStageSafeZone(stageSafeZones.left, null);
             applyStageSafeZone(stageSafeZones.right, null);
+            applyStageSafeZone(stageSafeZones.topLeft, null);
             return;
         }
 
@@ -62,6 +65,7 @@ export function createStageSafeZoneController({
         if (!(usableWidth > 0)) {
             applyStageSafeZone(stageSafeZones.left, null);
             applyStageSafeZone(stageSafeZones.right, null);
+            applyStageSafeZone(stageSafeZones.topLeft, null);
             return;
         }
 
@@ -120,8 +124,10 @@ export function createStageSafeZoneController({
 
         const leftRect = getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, "left");
         const rightRect = getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, "right");
+        const topLeftRect = getTopCornerSafeRect(contentRects, frameWidth, frameHeight, "left");
         applyStageSafeZone(stageSafeZones.left, leftRect);
         applyStageSafeZone(stageSafeZones.right, rightRect);
+        applyStageSafeZone(stageSafeZones.topLeft, topLeftRect);
     }
 
     function scheduleStageSafeZoneUpdate() {

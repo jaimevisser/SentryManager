@@ -8,7 +8,14 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from app.renderer.pipeline import _draw_heading_cell, _get_layout_slot_specs, build_render_plan, get_normalized_edit_segments, render_event
+from app.renderer.pipeline import (
+    _draw_heading_cell,
+    _draw_telemetry_frame,
+    _get_layout_slot_specs,
+    build_render_plan,
+    get_normalized_edit_segments,
+    render_event,
+)
 
 
 class RendererPipelineTests(unittest.TestCase):
@@ -75,6 +82,24 @@ class RendererPipelineTests(unittest.TestCase):
             self.assertFalse(old_intermediate_dir.exists())
             self.assertFalse(current_intermediate_dir.exists())
             self.assertTrue(keep_path.is_file())
+
+    def test_draw_telemetry_frame_renders_location_in_top_left_safe_zone(self) -> None:
+        frame, has_overlay = _draw_telemetry_frame(
+            frame_size={"width": 1280, "height": 720},
+            safe_zones={
+                "left": None,
+                "right": None,
+                "topLeft": (0.0, 0.0, 220.0, 160.0),
+            },
+            telemetry_point=None,
+            event_driver_assist_display=None,
+            event_date_label="27-03-2026",
+            event_time_label="14:37",
+            event_location_label="Parallelweg, Oss",
+        )
+
+        self.assertTrue(has_overlay)
+        self.assertIsNotNone(frame.getbbox())
 
     def test_normalizes_marker_state_into_contiguous_segments(self) -> None:
         player_edits = {

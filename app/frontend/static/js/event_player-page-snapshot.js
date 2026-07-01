@@ -175,6 +175,7 @@ export function createEventPlayerSnapshotApi({
             safeZones: {
                 left: getRelativeElementRect(stageSafeZones.left),
                 right: getRelativeElementRect(stageSafeZones.right),
+                topLeft: getRelativeElementRect(stageSafeZones.topLeft),
             },
             stageSize: stageSurface
                 ? {

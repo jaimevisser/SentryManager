@@ -67,7 +67,6 @@ TELEMETRY_COLOR = (246, 251, 255, 255)
 TELEMETRY_SHADOW = (0, 0, 0, 160)
 AUTOPILOT_ACTIVE_COLOR = (94, 169, 255, 245)
 HEADING_LABEL_COLOR = (0, 0, 0, 224)
-ICON_SHADOW_COLOR = (0, 0, 0, 170)
 SVG_ICON_CACHE: dict[tuple[str, int], Image.Image | None] = {}
 
 
@@ -369,6 +368,9 @@ def render_event(
         str(clip["absolute_file_path"]): clip
         for clip in render_plan["mediaIndex"]
     }
+    event_payload = _load_event_payload(event_dir)
+    event_date_label, event_time_label = _get_event_datetime_labels(event_payload, event_dir)
+    event_location_label = _get_event_location_label(event_payload)
     event_processing_state = _load_event_processing_state(event_dir)
     event_driver_assist_display = _get_event_driver_assist_display(event_processing_state)
 
@@ -377,6 +379,9 @@ def render_event(
         render_plan=render_plan,
         event_dir=event_dir,
         event_driver_assist_display=event_driver_assist_display,
+        event_date_label=event_date_label,
+        event_time_label=event_time_label,
+        event_location_label=event_location_label,
         media_clips_by_path=media_clips_by_path,
         intermediate_dir=intermediate_dir,
     )
@@ -421,6 +426,9 @@ def _render_plan_segments(
     render_plan: dict[str, object],
     event_dir: Path,
     event_driver_assist_display: dict[str, object] | None,
+    event_date_label: str | None,
+    event_time_label: str | None,
+    event_location_label: str | None,
     media_clips_by_path: dict[str, dict[str, object]],
     intermediate_dir: Path,
 ) -> list[Path]:
@@ -431,6 +439,9 @@ def _render_plan_segments(
             segment=segment,
             event_dir=event_dir,
             event_driver_assist_display=event_driver_assist_display,
+            event_date_label=event_date_label,
+            event_time_label=event_time_label,
+            event_location_label=event_location_label,
             frame_size=render_plan["frameSize"],
             frame_rate=float(render_plan["frameRate"]),
             media_clips_by_path=media_clips_by_path,
@@ -764,6 +775,9 @@ def _render_segment(
     segment: dict[str, object],
     event_dir: Path,
     event_driver_assist_display: dict[str, object] | None,
+    event_date_label: str | None,
+    event_time_label: str | None,
+    event_location_label: str | None,
     frame_size: dict[str, int],
     frame_rate: float,
     media_clips_by_path: dict[str, dict[str, object]],
@@ -872,7 +886,12 @@ def _render_segment(
         ]
     )
 
-    if not segment.get("overlay", {}).get("telemetry"):
+    if (
+        not segment.get("overlay", {}).get("telemetry")
+        and not event_date_label
+        and not event_time_label
+        and not event_location_label
+    ):
         shutil.move(str(base_output_path), str(output_path))
         return
 
@@ -880,6 +899,9 @@ def _render_segment(
         segment=segment,
         event_dir=event_dir,
         event_driver_assist_display=event_driver_assist_display,
+        event_date_label=event_date_label,
+        event_time_label=event_time_label,
+        event_location_label=event_location_label,
         frame_size=frame_size,
         frame_rate=frame_rate,
         media_clips_by_path=media_clips_by_path,
@@ -925,6 +947,9 @@ def _render_segment_telemetry_overlay(
     segment: dict[str, object],
     event_dir: Path,
     event_driver_assist_display: dict[str, object] | None,
+    event_date_label: str | None,
+    event_time_label: str | None,
+    event_location_label: str | None,
     frame_size: dict[str, int],
     frame_rate: float,
     media_clips_by_path: dict[str, dict[str, object]],
@@ -935,7 +960,15 @@ def _render_segment_telemetry_overlay(
         return False
 
     safe_zones = _get_safe_zone_rects(segment, frame_size, media_clips_by_path)
-    if safe_zones["left"] is None and safe_zones["right"] is None and event_driver_assist_display is None:
+    if (
+        safe_zones["left"] is None
+        and safe_zones["right"] is None
+        and safe_zones["topLeft"] is None
+        and event_driver_assist_display is None
+        and not event_date_label
+        and not event_time_label
+        and not event_location_label
+    ):
         return False
 
     overlay_process = subprocess.Popen(
@@ -974,6 +1007,9 @@ def _render_segment_telemetry_overlay(
                 safe_zones=safe_zones,
                 telemetry_point=telemetry_point,
                 event_driver_assist_display=event_driver_assist_display,
+                event_date_label=event_date_label,
+                event_time_label=event_time_label,
+                event_location_label=event_location_label,
             )
             rendered_any_overlay = rendered_any_overlay or has_overlay
             overlay_process.stdin.write(overlay_frame.tobytes())
@@ -1051,6 +1087,9 @@ def _draw_telemetry_frame(
     safe_zones: dict[str, tuple[float, float, float, float] | None],
     telemetry_point: dict[str, object] | None,
     event_driver_assist_display: dict[str, object] | None,
+    event_date_label: str | None,
+    event_time_label: str | None,
+    event_location_label: str | None,
 ) -> tuple[Image.Image, bool]:
     image = Image.new("RGBA", (int(frame_size["width"]), int(frame_size["height"])), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -1063,11 +1102,84 @@ def _draw_telemetry_frame(
     has_overlay = False
     left_zone = safe_zones.get("left")
     right_zone = safe_zones.get("right")
+    top_left_zone = safe_zones.get("topLeft")
     if left_zone is not None:
         has_overlay = _draw_left_safe_zone(image, draw, left_zone, sample) or has_overlay
     if right_zone is not None:
         has_overlay = _draw_right_safe_zone(image, draw, right_zone, sample, event_driver_assist_display) or has_overlay
+    if top_left_zone is not None:
+        has_overlay = _draw_top_left_safe_zone(
+            draw,
+            top_left_zone,
+            event_date_label,
+            event_time_label,
+            event_location_label,
+        ) or has_overlay
     return image, has_overlay
+
+
+def _draw_top_left_safe_zone(
+    draw: ImageDraw.ImageDraw,
+    rect: tuple[float, float, float, float],
+    event_date_label: str | None,
+    event_time_label: str | None,
+    event_location_label: str | None,
+) -> bool:
+    lines = [
+        value.strip()
+        for value in (event_date_label, event_time_label, event_location_label)
+        if isinstance(value, str) and value.strip()
+    ]
+    if not lines:
+        return False
+
+    left, top, right, bottom = rect
+    width = right - left
+    height = bottom - top
+    if width < 1 or height < 1:
+        return False
+
+    padding = max(6.0, width * 0.08)
+    inner_left = left + padding
+    inner_top = top + padding
+    inner_right = max(inner_left, right - padding)
+    inner_bottom = max(inner_top, bottom - padding)
+    if inner_right - inner_left < 1 or inner_bottom - inner_top < 1:
+        return False
+
+    font = _fit_safe_zone_text_font(rect, 0.105, 0.095)
+    letter_spacing = _get_text_letter_spacing(font, 0.02)
+    fitted_lines = [
+        _truncate_text_to_width(draw, line, font, inner_right - inner_left, letter_spacing)
+        for line in lines
+    ]
+    fitted_lines = [line for line in fitted_lines if line]
+    if not fitted_lines:
+        return False
+
+    line_gap = max(_scale_stage_pixels(1.0, width), height * 0.012)
+    line_height = _measure_tracked_text(draw, "00", font, letter_spacing)[1]
+    block_height = (line_height * len(fitted_lines)) + (line_gap * max(0, len(fitted_lines) - 1))
+    block_bottom = inner_bottom
+    current_top = block_bottom - block_height
+    for line in fitted_lines:
+        line_rect = (
+            inner_left,
+            current_top,
+            inner_right,
+            current_top + line_height,
+        )
+        _draw_centered_text(
+            draw,
+            line_rect,
+            line,
+            font,
+            fill=(255, 255, 255, 255),
+            shadow=False,
+            letter_spacing=letter_spacing,
+        )
+        current_top += line_height + line_gap
+    return True
 
 
 def _draw_left_safe_zone(
@@ -1217,11 +1329,8 @@ def _paste_centered_svg_icon(
         return False
     if abs(rotation_degrees) > 0.1:
         icon = icon.rotate(-rotation_degrees, resample=Image.Resampling.BICUBIC, expand=True)
-    shadow = Image.new("RGBA", icon.size, ICON_SHADOW_COLOR)
-    shadow.putalpha(icon.getchannel("A"))
     x = int(round(left + ((right - left - icon.width) / 2)))
     y = int(round(top + ((bottom - top - icon.height) / 2)))
-    image.alpha_composite(shadow, (x + 2, y + 2))
     image.alpha_composite(icon, (x, y))
     return True
 
@@ -1381,23 +1490,6 @@ def _draw_text_with_shadow(
     letter_spacing: float = 0.0,
 ) -> None:
     x, y = xy
-    shadow_offsets = (
-        (-2, 0),
-        (-1, -1),
-        (-1, 0),
-        (-1, 1),
-        (0, -2),
-        (0, -1),
-        (0, 1),
-        (0, 2),
-        (1, -1),
-        (1, 0),
-        (1, 1),
-        (2, 0),
-    )
-    for shadow_x, shadow_y in shadow_offsets:
-        _draw_tracked_text(draw, (x + shadow_x, y + shadow_y), text, font, fill=TELEMETRY_SHADOW, letter_spacing=letter_spacing)
-    _draw_tracked_text(draw, (x, y), text, font, fill=fill, letter_spacing=letter_spacing)
     _draw_tracked_text(draw, (x, y), text, font, fill=fill, letter_spacing=letter_spacing)
 
 
@@ -1433,6 +1525,29 @@ def _measure_tracked_text(
     text_width = int(round(sum(_get_character_advance(font, character) for character in text)))
     text_width += int(round(letter_spacing * max(0, len(text) - 1)))
     return (text_width, text_height)
+
+
+def _truncate_text_to_width(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.ImageFont,
+    max_width: float,
+    letter_spacing: float = 0.0,
+) -> str:
+    if max_width <= 0:
+        return ""
+    if _measure_tracked_text(draw, text, font, letter_spacing)[0] <= max_width:
+        return text
+
+    ellipsis = "..."
+    if _measure_tracked_text(draw, ellipsis, font, letter_spacing)[0] > max_width:
+        return ""
+
+    for index in range(len(text), 0, -1):
+        candidate = f"{text[:index].rstrip()}{ellipsis}"
+        if _measure_tracked_text(draw, candidate, font, letter_spacing)[0] <= max_width:
+            return candidate
+    return ellipsis
 
 
 def _get_character_advance(font: ImageFont.ImageFont, character: str) -> float:
@@ -1483,7 +1598,7 @@ def _get_safe_zone_rects(
         media_clips_by_path,
     )
     if master_aspect_ratio <= 0:
-        return {"left": None, "right": None}
+        return {"left": None, "right": None, "topLeft": None}
 
     frame_width = float(frame_size["width"])
     frame_height = float(frame_size["height"])
@@ -1492,7 +1607,7 @@ def _get_safe_zone_rects(
     column_gap = 0.0 if segment.get("layout") == "triple" else float(_scale_stage_pixels(DOUBLE_LAYOUT_GAP_AT_BASE_WIDTH, frame_width))
     usable_width = max(0.0, frame_width - left_padding - right_padding)
     if usable_width <= 0 or frame_height <= 0:
-        return {"left": None, "right": None}
+        return {"left": None, "right": None, "topLeft": None}
 
     content_rects: list[tuple[float, float, float, float]] = []
 
@@ -1552,6 +1667,7 @@ def _get_safe_zone_rects(
     return {
         "left": _get_bottom_corner_safe_rect(content_rects, frame_width, frame_height, "left"),
         "right": _get_bottom_corner_safe_rect(content_rects, frame_width, frame_height, "right"),
+        "topLeft": _get_top_corner_safe_rect(content_rects, frame_width, frame_height, "left"),
     }
 
 
@@ -1653,6 +1769,42 @@ def _get_bottom_corner_safe_rect(
     return best_rect
 
 
+def _get_top_corner_safe_rect(
+    content_rects: list[tuple[float, float, float, float]],
+    frame_width: float,
+    frame_height: float,
+    side: str,
+) -> tuple[float, float, float, float] | None:
+    breakpoints = {0.0, frame_height}
+    for rect in content_rects:
+        breakpoints.add(max(0.0, min(frame_height, rect[1])))
+        breakpoints.add(max(0.0, min(frame_height, rect[3])))
+
+    best_rect: tuple[float, float, float, float] | None = None
+    best_area = 0.0
+    for bottom in sorted(breakpoints):
+        available_width = frame_width
+        for rect in content_rects:
+            if rect[3] <= 0 or rect[1] >= bottom:
+                continue
+            if side == "left":
+                available_width = min(available_width, rect[0])
+            else:
+                available_width = min(available_width, frame_width - rect[2])
+
+        height = max(0.0, bottom)
+        width = max(0.0, available_width)
+        area = width * height
+        if area <= best_area or width < 1 or height < 1:
+            continue
+        if side == "left":
+            best_rect = (0.0, 0.0, width, height)
+        else:
+            best_rect = (frame_width - width, 0.0, frame_width, height)
+        best_area = area
+    return best_rect
+
+
 def _slot_has_telemetry(slot: dict[str, object]) -> bool:
     for fragment in slot.get("fragments", []):
         segment_key, _ = _split_clip_stem(Path(str(fragment["sourceClip"])).stem)
@@ -1671,6 +1823,52 @@ def _load_event_processing_state(event_dir: Path) -> dict[str, object]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _load_event_payload(event_dir: Path) -> dict[str, object] | None:
+    event_file = event_dir / "event.json"
+    if not event_file.is_file():
+        return None
+
+    try:
+        payload = json.loads(event_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _get_event_location_label(payload: dict[str, object] | None) -> str | None:
+    if payload is None:
+        return None
+
+    street = payload.get("street")
+    city = payload.get("city")
+    location_parts = [value.strip() for value in (street, city) if isinstance(value, str) and value.strip()]
+    if not location_parts:
+        return None
+    return ", ".join(location_parts)
+
+
+def _get_event_datetime_labels(payload: dict[str, object] | None, event_dir: Path) -> tuple[str | None, str | None]:
+    timestamp = None
+    if isinstance(payload, dict):
+        raw_timestamp = payload.get("timestamp")
+        if isinstance(raw_timestamp, str) and raw_timestamp.strip():
+            try:
+                timestamp = datetime.fromisoformat(raw_timestamp.strip())
+            except ValueError:
+                timestamp = None
+
+    if timestamp is None:
+        timestamp = _infer_event_timestamp(event_dir.name)
+
+    if timestamp is None:
+        return None, None
+
+    return timestamp.strftime("%d-%m-%Y"), timestamp.strftime("%H:%M")
 
 
 def _coerce_optional_percentage(value: object) -> float | None:

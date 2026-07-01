@@ -206,6 +206,41 @@ export function getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, s
     return bestRect;
 }
 
+export function getTopCornerSafeRect(contentRects, frameWidth, frameHeight, side) {
+    const breakpoints = new Set([0, frameHeight]);
+    for (const rect of contentRects) {
+        breakpoints.add(Math.max(0, Math.min(frameHeight, rect.top)));
+        breakpoints.add(Math.max(0, Math.min(frameHeight, rect.bottom)));
+    }
+
+    let bestRect = { width: 0, height: 0 };
+    let bestArea = 0;
+
+    for (const bottom of Array.from(breakpoints).sort((left, right) => left - right)) {
+        let availableWidth = frameWidth;
+        for (const rect of contentRects) {
+            if (rect.bottom <= 0 || rect.top >= bottom) {
+                continue;
+            }
+            if (side === "left") {
+                availableWidth = Math.min(availableWidth, rect.left);
+            } else {
+                availableWidth = Math.min(availableWidth, frameWidth - rect.right);
+            }
+        }
+
+        const height = Math.max(0, bottom);
+        const width = Math.max(0, availableWidth);
+        const area = width * height;
+        if (area > bestArea) {
+            bestArea = area;
+            bestRect = { width, height };
+        }
+    }
+
+    return bestRect;
+}
+
 function getCameraOffsetKey(cameraKey, offset, cameraLayoutSequence) {
     const currentIndex = cameraLayoutSequence.indexOf(cameraKey);
     if (currentIndex < 0) {

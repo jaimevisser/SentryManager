@@ -5,16 +5,6 @@
 {% endblock %}
 
 {% block content %}
-    <section class="player-detail-page">
-        <div class="player-meta-line">
-            <span>{{ event.day_label }}</span>
-            <span>{{ event.time_label }}</span>
-            {% if event.location_label %}
-                <span>{{ event.location_label }}</span>
-            {% endif %}
-        </div>
-    </section>
-
     <section class="player-stage player-stage-single">
         {% if default_view_key %}
             <div class="player-stage-surface" data-player-stage-surface data-has-telemetry="true">
@@ -161,6 +151,26 @@
                             <div class="player-safe-zone-cell" aria-hidden="true"></div>
                         </div>
                     </div>
+                    {% if overlay_date_label or overlay_time_label or event.location_label %}
+                        <div class="player-safe-zone player-safe-zone-top-left" data-player-safe-zone="top-left" hidden>
+                            <div class="player-safe-zone-location-wrap">
+                                <div class="player-safe-zone-location-stack">
+                                    {% if overlay_date_label %}
+                                        <span class="player-safe-zone-text player-safe-zone-text-location"
+                                              data-player-event-date>{{ overlay_date_label }}</span>
+                                    {% endif %}
+                                    {% if overlay_time_label %}
+                                        <span class="player-safe-zone-text player-safe-zone-text-location"
+                                              data-player-event-time>{{ overlay_time_label }}</span>
+                                    {% endif %}
+                                    {% if event.location_label %}
+                                        <span class="player-safe-zone-text player-safe-zone-text-location"
+                                              data-player-location>{{ event.location_label }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
                     <div class="player-safe-zone player-safe-zone-right" data-player-safe-zone="right" hidden>
                         <div class="player-safe-zone-stack">
                             <div class="player-safe-zone-cell" aria-hidden="true">

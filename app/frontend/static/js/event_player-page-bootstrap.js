@@ -88,6 +88,7 @@ export function queryEventPlayerNodes(documentObject) {
         stageSafeZones: {
             left: documentObject.querySelector('[data-player-safe-zone="left"]'),
             right: documentObject.querySelector('[data-player-safe-zone="right"]'),
+            topLeft: documentObject.querySelector('[data-player-safe-zone="top-left"]'),
         },
         secondaryPlayers: {
             left: documentObject.querySelector('[data-secondary-slot="left"]'),
