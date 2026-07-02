@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import struct
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from pathlib import Path
 
 
 SEI_SIDECAR_SUFFIX = "-telemetry.sei.bin"
+ROUTE_SVG_SUFFIX = "-route.svg"
+EVENT_ROUTE_SVG_NAME = "route-combined.svg"
 PROCESSING_MARKER_NAME = "sentrymanager.json"
 PRIMARY_CAMERA_KEY = "front"
 CAMERA_KEYS = (
@@ -102,6 +105,7 @@ class SegmentTelemetryResult:
     autopilot_observed_duration_ms: int = 0
     autopilot_active_duration_ms: int = 0
     self_driving_duration_ms: int = 0
+    route_points: list[tuple[float, float]] | None = None
 
 
 def get_sei_sidecar_path(clip_file: Path) -> Path:
@@ -110,6 +114,56 @@ def get_sei_sidecar_path(clip_file: Path) -> Path:
 
 def get_segment_sei_sidecar_path(event_dir: Path, segment_key: str) -> Path:
     return event_dir / f"{segment_key}{SEI_SIDECAR_SUFFIX}"
+
+
+def get_segment_route_svg_path(event_dir: Path, segment_key: str) -> Path:
+    return event_dir / f"{segment_key}{ROUTE_SVG_SUFFIX}"
+
+
+def get_event_route_svg_path(event_dir: Path) -> Path:
+    return event_dir / EVENT_ROUTE_SVG_NAME
+
+
+def event_needs_route_backfill(event_dir: Path) -> bool:
+    sidecars = list(event_dir.glob(f"*{SEI_SIDECAR_SUFFIX}"))
+    if not sidecars:
+        return False
+
+    has_any_segment_route = False
+    for sidecar in sidecars:
+        segment_key = sidecar.name[: -len(SEI_SIDECAR_SUFFIX)]
+        segment_route_svg_path = get_segment_route_svg_path(event_dir, segment_key)
+        if segment_route_svg_path.is_file():
+            has_any_segment_route = True
+            continue
+        if not segment_route_svg_path.is_file():
+            return True
+
+    event_route_svg_path = get_event_route_svg_path(event_dir)
+    if has_any_segment_route and not event_route_svg_path.is_file():
+        return True
+
+    if event_route_svg_path.is_file() and not route_svg_has_projection_metadata(event_route_svg_path):
+        return True
+
+    return False
+
+
+def route_svg_has_projection_metadata(route_svg_path: Path) -> bool:
+    try:
+        payload = route_svg_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    return (
+        'data-route-projection-version="2"' in payload
+        and 'data-route-mean-lat="' in payload
+        and 'data-route-mean-lon="' in payload
+        and 'data-route-cos-lat="' in payload
+        and 'data-route-min-x="' in payload
+        and 'data-route-min-y="' in payload
+        and 'data-route-span="' in payload
+    )
 
 
 def get_event_processing_marker_path(event_dir: Path) -> Path:
@@ -156,6 +210,7 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
     event_autopilot_observed_duration_ms: dict[Path, int] = {}
     event_autopilot_active_duration_ms: dict[Path, int] = {}
     event_self_driving_duration_ms: dict[Path, int] = {}
+    event_route_points: dict[Path, list[tuple[str, list[tuple[float, float]]]]] = {}
     for clip_file in clip_files:
         segment_key, camera_key = split_clip_stem(clip_file.stem)
         if camera_key == "unknown":
@@ -163,11 +218,11 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
         segment_entry = segments.setdefault((clip_file.parent, segment_key), {})
         segment_entry[camera_key] = clip_file
 
-    pending_event_dirs = {
-        event_dir
-        for event_dir, _ in segments
-        if not get_event_processing_marker_path(event_dir).is_file()
-    }
+    pending_event_dirs: set[Path] = set()
+    for event_dir, segment_key in segments:
+        marker_exists = get_event_processing_marker_path(event_dir).is_file()
+        if (not marker_exists) or event_needs_route_backfill(event_dir):
+            pending_event_dirs.add(event_dir)
 
     for (event_dir, segment_key), camera_files in segments.items():
         if event_dir not in pending_event_dirs:
@@ -187,6 +242,23 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
         event_self_driving_duration_ms[event_dir] = (
             event_self_driving_duration_ms.get(event_dir, 0) + result.self_driving_duration_ms
         )
+        if result.route_points:
+            event_route_points.setdefault(event_dir, []).append((segment_key, result.route_points))
+
+    for event_dir, segment_points in event_route_points.items():
+        flattened_points: list[tuple[float, float]] = []
+        for _, route_points in sorted(segment_points, key=lambda item: item[0]):
+            for point in route_points:
+                if flattened_points and flattened_points[-1] == point:
+                    continue
+                flattened_points.append(point)
+
+        event_route_svg_path = get_event_route_svg_path(event_dir)
+        route_svg = build_route_svg_from_gps_points(flattened_points)
+        if route_svg:
+            write_text_if_changed(event_route_svg_path, route_svg)
+        elif event_route_svg_path.exists():
+            event_route_svg_path.unlink()
 
     for event_dir, _ in segments:
         if event_dir not in pending_event_dirs:
@@ -214,6 +286,7 @@ def ensure_segment_sei_sidecar(event_dir: Path, segment_key: str, camera_files: 
         return SegmentTelemetryResult()
 
     sidecar_path = get_segment_sei_sidecar_path(event_dir, segment_key)
+    route_svg_path = get_segment_route_svg_path(event_dir, segment_key)
     (
         payload,
         has_autopilot_activity,
@@ -221,31 +294,33 @@ def ensure_segment_sei_sidecar(event_dir: Path, segment_key: str, camera_files: 
         autopilot_observed_duration_ms,
         autopilot_active_duration_ms,
         self_driving_duration_ms,
+        route_svg,
+        route_points,
     ) = build_sei_sidecar_payload(source_clip)
     if payload is None:
         if sidecar_path.exists():
             sidecar_path.unlink()
+        if route_svg_path.exists():
+            route_svg_path.unlink()
         return SegmentTelemetryResult(
             has_autopilot_activity=has_autopilot_activity,
             has_steering_angle_data=has_steering_angle_data,
             autopilot_observed_duration_ms=autopilot_observed_duration_ms,
             autopilot_active_duration_ms=autopilot_active_duration_ms,
             self_driving_duration_ms=self_driving_duration_ms,
+            route_points=route_points,
         )
 
-    if sidecar_path.exists():
-        return SegmentTelemetryResult(
-            sidecar_path=sidecar_path,
-            has_autopilot_activity=has_autopilot_activity,
-            has_steering_angle_data=has_steering_angle_data,
-            autopilot_observed_duration_ms=autopilot_observed_duration_ms,
-            autopilot_active_duration_ms=autopilot_active_duration_ms,
-            self_driving_duration_ms=self_driving_duration_ms,
-        )
+    if not sidecar_path.exists():
+        temp_path = sidecar_path.with_name(f"{sidecar_path.name}.tmp-{os.getpid()}")
+        temp_path.write_bytes(payload)
+        temp_path.replace(sidecar_path)
 
-    temp_path = sidecar_path.with_name(f"{sidecar_path.name}.tmp-{os.getpid()}")
-    temp_path.write_bytes(payload)
-    temp_path.replace(sidecar_path)
+    if route_svg:
+        write_text_if_changed(route_svg_path, route_svg)
+    elif route_svg_path.exists():
+        route_svg_path.unlink()
+
     return SegmentTelemetryResult(
         sidecar_path=sidecar_path,
         has_autopilot_activity=has_autopilot_activity,
@@ -253,6 +328,7 @@ def ensure_segment_sei_sidecar(event_dir: Path, segment_key: str, camera_files: 
         autopilot_observed_duration_ms=autopilot_observed_duration_ms,
         autopilot_active_duration_ms=autopilot_active_duration_ms,
         self_driving_duration_ms=self_driving_duration_ms,
+        route_points=route_points,
     )
 
 
@@ -300,7 +376,9 @@ def ensure_event_processing_marker(
     return marker_path
 
 
-def build_sei_sidecar_payload(clip_file: Path) -> tuple[bytes | None, bool, bool, int, int, int]:
+def build_sei_sidecar_payload(
+    clip_file: Path,
+) -> tuple[bytes | None, bool, bool, int, int, int, str | None, list[tuple[float, float]]]:
     clip_bytes = clip_file.read_bytes()
     samples, clip_duration_ms = extract_sei_samples(clip_bytes)
     (
@@ -310,8 +388,10 @@ def build_sei_sidecar_payload(clip_file: Path) -> tuple[bytes | None, bool, bool
     ) = calculate_autopilot_durations(samples, clip_duration_ms)
     has_autopilot_activity = autopilot_active_duration_ms > 0
     has_steering_angle_data = any(sample.presence_bits & (1 << FIELD_STEERING_WHEEL_ANGLE) for sample in samples)
+    route_points = extract_gps_points(samples)
+    route_svg = build_route_svg_from_gps_points(route_points)
     if not samples:
-        return None, has_autopilot_activity, has_steering_angle_data, 0, 0, 0
+        return None, has_autopilot_activity, has_steering_angle_data, 0, 0, 0, None, route_points
     schema_version = max((sample.message_version for sample in samples), default=0)
     return (
         serialize_sei_samples(samples, schema_version),
@@ -320,7 +400,270 @@ def build_sei_sidecar_payload(clip_file: Path) -> tuple[bytes | None, bool, bool
         autopilot_observed_duration_ms,
         autopilot_active_duration_ms,
         self_driving_duration_ms,
+        route_svg,
+        route_points,
     )
+
+
+def build_route_svg_content(samples: list[SeiSample]) -> str | None:
+    gps_points = extract_gps_points(samples)
+    return build_route_svg_from_gps_points(gps_points)
+
+
+def build_route_svg_from_gps_points(gps_points: list[tuple[float, float]]) -> str | None:
+    if len(gps_points) < 2:
+        return None
+
+    projected_points, projection = project_points(gps_points)
+    if len(projected_points) < 2:
+        return None
+
+    bounds = calculate_normalization_bounds(projected_points)
+    if bounds is None:
+        return None
+
+    filtered_points = drop_nearby_points(projected_points)
+    if len(filtered_points) < 2:
+        return None
+
+    simplified_points = rdp_simplify(filtered_points)
+    if len(simplified_points) < 2:
+        return None
+
+    normalized_points = normalize_points_with_bounds(simplified_points, bounds)
+    if len(normalized_points) < 2:
+        return None
+
+    path_d = build_svg_path_d(normalized_points)
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" '
+        'data-route-projection-version="2" '
+        f'data-route-mean-lat="{format_projection_float(projection["mean_lat"])}" '
+        f'data-route-mean-lon="{format_projection_float(projection["mean_lon"])}" '
+        f'data-route-cos-lat="{format_projection_float(projection["cos_lat"])}" '
+        f'data-route-min-x="{format_projection_float(bounds["min_x"])}" '
+        f'data-route-min-y="{format_projection_float(bounds["min_y"])}" '
+        f'data-route-span="{format_projection_float(bounds["span"])}">'
+        '<path d="'
+        + path_d
+        + '" fill="none" stroke="#eef8ff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>"
+    )
+
+
+def extract_gps_points(samples: list[SeiSample]) -> list[tuple[float, float]]:
+    points: list[tuple[float, float]] = []
+    previous: tuple[int, int] | None = None
+    for sample in samples:
+        if not (sample.presence_bits & (1 << FIELD_LATITUDE)):
+            continue
+        if not (sample.presence_bits & (1 << FIELD_LONGITUDE)):
+            continue
+        key = (sample.latitude_e7, sample.longitude_e7)
+        if previous == key:
+            continue
+        previous = key
+        points.append((sample.latitude_e7 / 10_000_000, sample.longitude_e7 / 10_000_000))
+    return points
+
+
+def project_points(points: list[tuple[float, float]]) -> tuple[list[tuple[float, float]], dict[str, float]]:
+    if not points:
+        return [], {"mean_lat": 0.0, "mean_lon": 0.0, "cos_lat": 1.0}
+
+    mean_lat = sum(latitude for latitude, _ in points) / len(points)
+    mean_lon = sum(longitude for _, longitude in points) / len(points)
+    cos_lat = math.cos(math.radians(mean_lat))
+    if abs(cos_lat) < 1e-6:
+        cos_lat = 1e-6
+
+    projected_points = [
+        ((longitude - mean_lon) * cos_lat, latitude - mean_lat)
+        for latitude, longitude in points
+    ]
+    return projected_points, {
+        "mean_lat": mean_lat,
+        "mean_lon": mean_lon,
+        "cos_lat": cos_lat,
+    }
+
+
+def calculate_normalization_bounds(points: list[tuple[float, float]]) -> dict[str, float] | None:
+    if not points:
+        return None
+
+    min_x = min(point[0] for point in points)
+    max_x = max(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_y = max(point[1] for point in points)
+
+    span_x = max_x - min_x
+    span_y = max_y - min_y
+    span = max(span_x, span_y)
+    if span <= 0:
+        return None
+
+    return {
+        "min_x": min_x,
+        "min_y": min_y,
+        "span": span,
+    }
+
+
+def drop_nearby_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return points
+
+    min_x = min(point[0] for point in points)
+    max_x = max(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_y = max(point[1] for point in points)
+    diagonal = math.hypot(max_x - min_x, max_y - min_y)
+    min_step = max(diagonal * 0.0008, 1e-7)
+
+    filtered = [points[0]]
+    for point in points[1:-1]:
+        if math.hypot(point[0] - filtered[-1][0], point[1] - filtered[-1][1]) >= min_step:
+            filtered.append(point)
+    filtered.append(points[-1])
+    return filtered
+
+
+def rdp_simplify(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return points
+
+    min_x = min(point[0] for point in points)
+    max_x = max(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_y = max(point[1] for point in points)
+    diagonal = math.hypot(max_x - min_x, max_y - min_y)
+    epsilon = max(diagonal * 0.002, 2e-7)
+    return _rdp(points, epsilon)
+
+
+def _rdp(points: list[tuple[float, float]], epsilon: float) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return points
+
+    start = points[0]
+    end = points[-1]
+    max_distance = -1.0
+    max_index = -1
+    for index in range(1, len(points) - 1):
+        distance = perpendicular_distance(points[index], start, end)
+        if distance > max_distance:
+            max_distance = distance
+            max_index = index
+
+    if max_distance <= epsilon:
+        return [start, end]
+
+    left = _rdp(points[: max_index + 1], epsilon)
+    right = _rdp(points[max_index:], epsilon)
+    return left[:-1] + right
+
+
+def perpendicular_distance(point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]) -> float:
+    segment_x = end[0] - start[0]
+    segment_y = end[1] - start[1]
+    segment_length = math.hypot(segment_x, segment_y)
+    if segment_length <= 0:
+        return math.hypot(point[0] - start[0], point[1] - start[1])
+
+    cross = abs(
+        ((point[0] - start[0]) * segment_y)
+        - ((point[1] - start[1]) * segment_x)
+    )
+    return cross / segment_length
+
+
+def normalize_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    bounds = calculate_normalization_bounds(points)
+    if bounds is None:
+        return []
+
+    return normalize_points_with_bounds(points, bounds)
+
+
+def normalize_points_with_bounds(points: list[tuple[float, float]], bounds: dict[str, float]) -> list[tuple[float, float]]:
+    min_x = bounds["min_x"]
+    min_y = bounds["min_y"]
+    span = bounds["span"]
+
+    canvas_size = 1000
+    padding = 40
+    drawable = canvas_size - (padding * 2)
+
+    normalized: list[tuple[float, float]] = []
+    for x, y in points:
+        nx = padding + (((x - min_x) / span) * drawable)
+        ny = padding + (((y - min_y) / span) * drawable)
+        normalized.append((nx, canvas_size - ny))
+    return normalized
+
+
+def build_svg_path_d(points: list[tuple[float, float]]) -> str:
+    if len(points) <= 2:
+        return build_polyline_path_d(points)
+
+    if len(points) <= 8:
+        return build_polyline_path_d(points)
+
+    return build_smoothed_path_d(points)
+
+
+def build_polyline_path_d(points: list[tuple[float, float]]) -> str:
+    return " ".join(
+        f"M {format_float(points[0][0])} {format_float(points[0][1])}" if index == 0
+        else f"L {format_float(point[0])} {format_float(point[1])}"
+        for index, point in enumerate(points)
+    )
+
+
+def build_smoothed_path_d(points: list[tuple[float, float]]) -> str:
+    segments = [f"M {format_float(points[0][0])} {format_float(points[0][1])}"]
+    for index in range(len(points) - 1):
+        p0 = points[index - 1] if index > 0 else points[index]
+        p1 = points[index]
+        p2 = points[index + 1]
+        p3 = points[index + 2] if index + 2 < len(points) else p2
+
+        c1x = p1[0] + ((p2[0] - p0[0]) / 6)
+        c1y = p1[1] + ((p2[1] - p0[1]) / 6)
+        c2x = p2[0] - ((p3[0] - p1[0]) / 6)
+        c2y = p2[1] - ((p3[1] - p1[1]) / 6)
+
+        segments.append(
+            "C "
+            f"{format_float(c1x)} {format_float(c1y)} "
+            f"{format_float(c2x)} {format_float(c2y)} "
+            f"{format_float(p2[0])} {format_float(p2[1])}"
+        )
+    return " ".join(segments)
+
+
+def format_float(value: float) -> str:
+    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
+def format_projection_float(value: float) -> str:
+    text = f"{value:.8f}".rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
+def write_text_if_changed(path: Path, content: str) -> None:
+    if path.exists():
+        try:
+            if path.read_text(encoding="utf-8") == content:
+                return
+        except OSError:
+            pass
+
+    temp_path = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    temp_path.write_text(content, encoding="utf-8")
+    temp_path.replace(path)
 
 
 def calculate_autopilot_durations(samples: list[SeiSample], clip_duration_ms: int) -> tuple[int, int, int]:

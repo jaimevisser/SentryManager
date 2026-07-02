@@ -10,7 +10,9 @@ from PIL import Image, ImageDraw
 
 from app.renderer.pipeline import (
     _draw_heading_cell,
+    _draw_top_right_route_overlay,
     _draw_telemetry_frame,
+    _project_route_dot_to_overlay,
     _get_layout_slot_specs,
     build_render_plan,
     get_normalized_edit_segments,
@@ -100,6 +102,106 @@ class RendererPipelineTests(unittest.TestCase):
 
         self.assertTrue(has_overlay)
         self.assertIsNotNone(frame.getbbox())
+
+    def test_draw_telemetry_frame_renders_route_map_in_top_right_safe_zone(self) -> None:
+        route_map = Image.new("RGBA", (120, 120), (238, 248, 255, 230))
+        frame, has_overlay = _draw_telemetry_frame(
+            frame_size={"width": 1280, "height": 720},
+            safe_zones={
+                "left": None,
+                "right": None,
+                "topLeft": None,
+                "topRight": (1060.0, 0.0, 1180.0, 120.0),
+            },
+            segment_time=0.0,
+            telemetry_point=None,
+            route_map_overlay={
+                "image": route_map,
+                "projection": {
+                    "mean_lat": 0.0,
+                    "mean_lon": 0.0,
+                    "cos_lat": 1.0,
+                    "min_x": 0.0,
+                    "min_y": 0.0,
+                    "span": 1.0,
+                },
+            },
+            event_driver_assist_display=None,
+            event_base_timestamp=None,
+            event_location_label=None,
+        )
+
+        self.assertTrue(has_overlay)
+        overlay_pixel = frame.getpixel((1100, 60))
+        self.assertGreater(overlay_pixel[3], 0)
+
+    def test_draw_telemetry_frame_projects_route_dot_from_sample(self) -> None:
+        route_map_overlay = {
+            "image": Image.new("RGBA", (200, 200), (238, 248, 255, 255)),
+            "projection": {
+                "mean_lat": 0.0,
+                "mean_lon": 0.0,
+                "cos_lat": 1.0,
+                "min_x": 0.0,
+                "min_y": 0.0,
+                "span": 1.0,
+            },
+        }
+        rect = (1000.0, 0.0, 1200.0, 200.0)
+
+        image_without_dot = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+        draw_without_dot = ImageDraw.Draw(image_without_dot)
+        rendered_without_dot = _draw_top_right_route_overlay(
+            image_without_dot,
+            draw_without_dot,
+            rect,
+            route_map_overlay,
+            sample=None,
+        )
+        baseline_pixel = image_without_dot.getpixel((1100, 100))
+
+        image_with_dot = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+        draw_with_dot = ImageDraw.Draw(image_with_dot)
+        rendered_with_dot = _draw_top_right_route_overlay(
+            image_with_dot,
+            draw_with_dot,
+            rect,
+            route_map_overlay,
+            sample={
+                "presenceBits": (1 << 10) | (1 << 11),
+                "latitudeE7": 5_000_000,
+                "longitudeE7": 5_000_000,
+            },
+        )
+        dot_pixel = image_with_dot.getpixel((1100, 100))
+
+        self.assertTrue(rendered_without_dot)
+        self.assertTrue(rendered_with_dot)
+        self.assertNotEqual(baseline_pixel, dot_pixel)
+
+    def test_project_route_dot_to_overlay_accounts_for_letterboxing(self) -> None:
+        projected = _project_route_dot_to_overlay(
+            sample={
+                "presenceBits": (1 << 10) | (1 << 11),
+                "latitudeE7": 0,
+                "longitudeE7": 0,
+            },
+            projection={
+                "mean_lat": 0.0,
+                "mean_lon": 0.0,
+                "cos_lat": 1.0,
+                "min_x": 0.0,
+                "min_y": 0.0,
+                "span": 1.0,
+            },
+            width=200,
+            height=120,
+        )
+
+        self.assertIsNotNone(projected)
+        assert projected is not None
+        self.assertAlmostEqual(44.8, projected[0], places=1)
+        self.assertAlmostEqual(115.2, projected[1], places=1)
 
     def test_normalizes_marker_state_into_contiguous_segments(self) -> None:
         player_edits = {

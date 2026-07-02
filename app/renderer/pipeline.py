@@ -7,6 +7,7 @@ import json
 from fractions import Fraction
 import math
 from pathlib import Path
+import re
 import shlex
 import shutil
 import struct
@@ -15,7 +16,7 @@ import tempfile
 
 from PIL import Image, ImageDraw, ImageFont
 
-from ..sei import COLUMN_DEFINITIONS, FORMAT_MAGIC, FORMAT_VERSION, HEADER_SIZE
+from ..sei import COLUMN_DEFINITIONS, EVENT_ROUTE_SVG_NAME, FORMAT_MAGIC, FORMAT_VERSION, HEADER_SIZE
 
 
 CAMERA_ORDER = (
@@ -48,11 +49,18 @@ BLINKER_LEFT_PRESENT_MASK = 1 << 6
 BLINKER_RIGHT_PRESENT_MASK = 1 << 7
 BRAKE_PRESENT_MASK = 1 << 8
 AUTOPILOT_PRESENT_MASK = 1 << 9
+LATITUDE_PRESENT_MASK = 1 << 10
+LONGITUDE_PRESENT_MASK = 1 << 11
 HEADING_PRESENT_MASK = 1 << 12
 AUTOPILOT_NONE_STATE = 0
 BLINKER_LEFT_FLAG_MASK = 0x01
 BLINKER_RIGHT_FLAG_MASK = 0x02
 BRAKE_FLAG_MASK = 0x04
+ROUTE_MAP_CANVAS_SIZE = 1000.0
+ROUTE_MAP_PADDING = 40.0
+ROUTE_DOT_RADIUS_AT_CANVAS = 26.0
+ROUTE_DOT_FILL = (255, 51, 45, 255)
+ROUTE_DOT_STROKE = (0, 0, 0, 166)
 BASE_RENDER_WIDTH = 1920
 STAGE_PADDING_AT_BASE_WIDTH = 14.0
 DOUBLE_LAYOUT_GAP_AT_BASE_WIDTH = 10.0
@@ -954,10 +962,12 @@ def _render_segment_telemetry_overlay(
         return False
 
     safe_zones = _get_safe_zone_rects(segment, frame_size, media_clips_by_path)
+    route_map_overlay = _load_route_map_overlay(event_dir, safe_zones.get("topRight"))
     if (
         safe_zones["left"] is None
         and safe_zones["right"] is None
         and safe_zones["topLeft"] is None
+        and route_map_overlay is None
         and event_driver_assist_display is None
         and event_base_timestamp is None
         and not event_location_label
@@ -1000,6 +1010,7 @@ def _render_segment_telemetry_overlay(
                 safe_zones=safe_zones,
                 segment_time=segment_time,
                 telemetry_point=telemetry_point,
+                route_map_overlay=route_map_overlay,
                 event_driver_assist_display=event_driver_assist_display,
                 event_base_timestamp=event_base_timestamp,
                 event_location_label=event_location_label,
@@ -1080,9 +1091,10 @@ def _draw_telemetry_frame(
     safe_zones: dict[str, tuple[float, float, float, float] | None],
     segment_time: float,
     telemetry_point: dict[str, object] | None,
-    event_driver_assist_display: dict[str, object] | None,
-    event_base_timestamp: datetime | None,
-    event_location_label: str | None,
+    route_map_overlay: dict[str, object] | None = None,
+    event_driver_assist_display: dict[str, object] | None = None,
+    event_base_timestamp: datetime | None = None,
+    event_location_label: str | None = None,
 ) -> tuple[Image.Image, bool]:
     image = Image.new("RGBA", (int(frame_size["width"]), int(frame_size["height"])), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -1096,10 +1108,13 @@ def _draw_telemetry_frame(
     left_zone = safe_zones.get("left")
     right_zone = safe_zones.get("right")
     top_left_zone = safe_zones.get("topLeft")
+    top_right_zone = safe_zones.get("topRight")
     if left_zone is not None:
         has_overlay = _draw_left_safe_zone(image, draw, left_zone, sample) or has_overlay
     if right_zone is not None:
         has_overlay = _draw_right_safe_zone(image, draw, right_zone, sample, event_driver_assist_display) or has_overlay
+    if top_right_zone is not None and route_map_overlay is not None:
+        has_overlay = _draw_top_right_route_overlay(image, draw, top_right_zone, route_map_overlay, sample) or has_overlay
     if top_left_zone is not None:
         timeline_offset_seconds = float(segment_time)
         if telemetry_point is not None and isinstance(telemetry_point.get("eventTime"), int | float):
@@ -1221,6 +1236,216 @@ def _draw_top_left_safe_zone(
         )
         current_top += line_height + line_gap
     return True
+
+
+def _draw_top_right_route_overlay(
+    image: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    rect: tuple[float, float, float, float],
+    route_map_overlay: dict[str, object],
+    sample: dict[str, object] | None,
+) -> bool:
+    route_map_image = route_map_overlay.get("image")
+    projection = route_map_overlay.get("projection")
+    if not isinstance(route_map_image, Image.Image) or not isinstance(projection, dict):
+        return False
+
+    left, top, right, bottom = rect
+    width = max(1, int(round(right - left)))
+    height = max(1, int(round(bottom - top)))
+    if width < 1 or height < 1:
+        return False
+
+    image_x = int(round(left))
+    image_y = int(round(top))
+    if route_map_image.size != (width, height):
+        route_map_image = route_map_image.resize((width, height), Image.Resampling.LANCZOS)
+    image.alpha_composite(route_map_image, (image_x, image_y))
+
+    dot_position = _project_route_dot_to_overlay(sample, projection, width, height)
+    if dot_position is None:
+        return True
+
+    dot_radius = max(2.0, (min(width, height) * (ROUTE_DOT_RADIUS_AT_CANVAS / ROUTE_MAP_CANVAS_SIZE)))
+    dot_cx = image_x + dot_position[0]
+    dot_cy = image_y + dot_position[1]
+    dot_rect = (
+        dot_cx - dot_radius,
+        dot_cy - dot_radius,
+        dot_cx + dot_radius,
+        dot_cy + dot_radius,
+    )
+    draw.ellipse(dot_rect, fill=ROUTE_DOT_FILL, outline=ROUTE_DOT_STROKE, width=1)
+    return True
+
+
+def _project_route_dot_to_overlay(
+    sample: dict[str, object] | None,
+    projection: dict[str, float],
+    width: int,
+    height: int,
+) -> tuple[float, float] | None:
+    if sample is None:
+        return None
+
+    presence_bits = int(sample.get("presenceBits") or 0)
+    if (presence_bits & LATITUDE_PRESENT_MASK) == 0 or (presence_bits & LONGITUDE_PRESENT_MASK) == 0:
+        return None
+
+    latitude_e7 = sample.get("latitudeE7")
+    longitude_e7 = sample.get("longitudeE7")
+    if not isinstance(latitude_e7, int | float) or not isinstance(longitude_e7, int | float):
+        return None
+
+    mean_lat = projection["mean_lat"]
+    mean_lon = projection["mean_lon"]
+    cos_lat = projection["cos_lat"]
+    min_x = projection["min_x"]
+    min_y = projection["min_y"]
+    span = projection["span"]
+    if not math.isfinite(span) or span <= 0:
+        return None
+
+    latitude = float(latitude_e7) / 10_000_000
+    longitude = float(longitude_e7) / 10_000_000
+    projected_x = (longitude - mean_lon) * cos_lat
+    projected_y = latitude - mean_lat
+    drawable = ROUTE_MAP_CANVAS_SIZE - (ROUTE_MAP_PADDING * 2)
+    normalized_x = ROUTE_MAP_PADDING + (((projected_x - min_x) / span) * drawable)
+    normalized_y = ROUTE_MAP_CANVAS_SIZE - (ROUTE_MAP_PADDING + (((projected_y - min_y) / span) * drawable))
+    if not math.isfinite(normalized_x) or not math.isfinite(normalized_y):
+        return None
+
+    clamped_x = max(0.0, min(ROUTE_MAP_CANVAS_SIZE, normalized_x))
+    clamped_y = max(0.0, min(ROUTE_MAP_CANVAS_SIZE, normalized_y))
+    offset_x, offset_y, draw_width, draw_height = _get_route_canvas_contain_rect(width, height)
+    if draw_width <= 0 or draw_height <= 0:
+        return None
+    return (
+        offset_x + ((clamped_x / ROUTE_MAP_CANVAS_SIZE) * draw_width),
+        offset_y + ((clamped_y / ROUTE_MAP_CANVAS_SIZE) * draw_height),
+    )
+
+
+def _get_route_canvas_contain_rect(width: int, height: int) -> tuple[float, float, float, float]:
+    if width <= 0 or height <= 0:
+        return (0.0, 0.0, 0.0, 0.0)
+
+    scale = min(width / ROUTE_MAP_CANVAS_SIZE, height / ROUTE_MAP_CANVAS_SIZE)
+    draw_width = ROUTE_MAP_CANVAS_SIZE * scale
+    draw_height = ROUTE_MAP_CANVAS_SIZE * scale
+    offset_x = (width - draw_width) / 2
+    offset_y = (height - draw_height) / 2
+    return (offset_x, offset_y, draw_width, draw_height)
+
+
+def _load_route_map_overlay(
+    event_dir: Path,
+    top_right_safe_zone: tuple[float, float, float, float] | None,
+) -> dict[str, object] | None:
+    if top_right_safe_zone is None:
+        return None
+
+    left, top, right, bottom = top_right_safe_zone
+    target_width = max(1, int(round(right - left)))
+    target_height = max(1, int(round(bottom - top)))
+    if target_width < 1 or target_height < 1:
+        return None
+
+    route_svg_path = event_dir / EVENT_ROUTE_SVG_NAME
+    if not route_svg_path.is_file():
+        return None
+
+    try:
+        svg_payload = route_svg_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    projection = _parse_route_projection(svg_payload)
+    if projection is None:
+        return None
+
+    route_map_image = _render_svg_to_rgba_image(route_svg_path, target_width, target_height)
+    if route_map_image is None:
+        return None
+
+    return {
+        "projection": projection,
+        "image": route_map_image,
+    }
+
+
+def _parse_route_projection(svg_payload: str) -> dict[str, float] | None:
+    def parse_attribute(attribute_name: str) -> float | None:
+        match = re.search(rf'{attribute_name}="([^"]+)"', svg_payload)
+        if match is None:
+            return None
+        try:
+            value = float(match.group(1))
+        except ValueError:
+            return None
+        return value if math.isfinite(value) else None
+
+    projection = {
+        "mean_lat": parse_attribute("data-route-mean-lat"),
+        "mean_lon": parse_attribute("data-route-mean-lon"),
+        "cos_lat": parse_attribute("data-route-cos-lat"),
+        "min_x": parse_attribute("data-route-min-x"),
+        "min_y": parse_attribute("data-route-min-y"),
+        "span": parse_attribute("data-route-span"),
+    }
+    if any(value is None for value in projection.values()):
+        return None
+
+    span = float(projection["span"])
+    if span <= 0:
+        return None
+
+    return {
+        key: float(value)
+        for key, value in projection.items()
+        if value is not None
+    }
+
+
+def _render_svg_to_rgba_image(svg_path: Path, width: int, height: int) -> Image.Image | None:
+    if width < 1 or height < 1:
+        return None
+
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(svg_path),
+            "-vf",
+            (
+                f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+            ),
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "png",
+            "-",
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return None
+
+    try:
+        image = Image.open(io.BytesIO(result.stdout)).convert("RGBA")
+    except OSError:
+        return None
+
+    if image.size != (width, height):
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+    return image
 
 
 def _draw_left_safe_zone(
@@ -1640,7 +1865,7 @@ def _get_safe_zone_rects(
         media_clips_by_path,
     )
     if master_aspect_ratio <= 0:
-        return {"left": None, "right": None, "topLeft": None}
+        return {"left": None, "right": None, "topLeft": None, "topRight": None}
 
     frame_width = float(frame_size["width"])
     frame_height = float(frame_size["height"])
@@ -1649,7 +1874,7 @@ def _get_safe_zone_rects(
     column_gap = 0.0 if segment.get("layout") == "triple" else float(_scale_stage_pixels(DOUBLE_LAYOUT_GAP_AT_BASE_WIDTH, frame_width))
     usable_width = max(0.0, frame_width - left_padding - right_padding)
     if usable_width <= 0 or frame_height <= 0:
-        return {"left": None, "right": None, "topLeft": None}
+        return {"left": None, "right": None, "topLeft": None, "topRight": None}
 
     content_rects: list[tuple[float, float, float, float]] = []
 
@@ -1710,6 +1935,7 @@ def _get_safe_zone_rects(
         "left": _get_bottom_corner_safe_rect(content_rects, frame_width, frame_height, "left"),
         "right": _get_bottom_corner_safe_rect(content_rects, frame_width, frame_height, "right"),
         "topLeft": _get_top_corner_safe_rect(content_rects, frame_width, frame_height, "left"),
+        "topRight": _get_top_corner_safe_rect(content_rects, frame_width, frame_height, "right"),
     }
 
 
@@ -1959,6 +2185,9 @@ def _get_telemetry_sample(sidecar_path: Path, clip_time_seconds: float) -> dict[
         "showAutopilot": show_autopilot,
         "autopilotActive": bool((presence_bits & AUTOPILOT_PRESENT_MASK) and autopilot_state != AUTOPILOT_NONE_STATE),
         "steeringAngleDegrees": steering_angle_degrees,
+        "presenceBits": presence_bits,
+        "latitudeE7": int(telemetry["latitude_e7"][sample_index]) if presence_bits & LATITUDE_PRESENT_MASK else None,
+        "longitudeE7": int(telemetry["longitude_e7"][sample_index]) if presence_bits & LONGITUDE_PRESENT_MASK else None,
     }
 
 

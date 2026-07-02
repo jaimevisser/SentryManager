@@ -48,6 +48,7 @@ export function loadEventPlayerBootstrap(documentObject, normalizeDriverAssistDi
         eventDriverAssistDisplay: normalizeDriverAssistDisplay(eventFlags?.driverAssistDisplay),
         eventMarkerTime: getFiniteNumberOrNull(playlistConfig?.eventMarkerTime),
         eventTimestampIso: getStringOrNull(playlistConfig?.eventTimestampIso),
+        eventRouteSvgUrl: getStringOrNull(playlistConfig?.eventRouteSvgUrl),
         initialStartTime: initialStartTime === null ? 0 : Math.max(0, initialStartTime),
     };
 }
@@ -65,6 +66,7 @@ export function queryEventPlayerNodes(documentObject) {
         brakeNode: documentObject.querySelector("[data-player-brake]"),
         blinkerRightNode: documentObject.querySelector("[data-player-blinker-right]"),
         fsdPercentNode: documentObject.querySelector("[data-player-fsd-percent]"),
+        routeMapNode: documentObject.querySelector("[data-player-route-map]"),
         scrubber: documentObject.querySelector("[data-player-scrub]"),
         eventMarker: documentObject.querySelector("[data-player-event-marker]"),
         editTrack: documentObject.querySelector("[data-player-edit-track]"),
@@ -92,6 +94,7 @@ export function queryEventPlayerNodes(documentObject) {
             left: documentObject.querySelector('[data-player-safe-zone="left"]'),
             right: documentObject.querySelector('[data-player-safe-zone="right"]'),
             topLeft: documentObject.querySelector('[data-player-safe-zone="top-left"]'),
+            topRight: documentObject.querySelector('[data-player-safe-zone="top-right"]'),
         },
         secondaryPlayers: {
             left: documentObject.querySelector('[data-secondary-slot="left"]'),

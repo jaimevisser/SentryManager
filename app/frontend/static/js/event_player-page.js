@@ -37,6 +37,7 @@ export function initEventPlayer() {
         eventHasAutopilotActivity,
         eventHasSteeringAngleData,
         eventMarkerTime,
+        eventRouteSvgUrl,
         eventTimestampIso,
         initialRenderJob,
         initialStartTime,
@@ -74,6 +75,7 @@ export function initEventPlayer() {
         exportFormatButtons,
         exportFormatToggle,
         fsdPercentNode,
+        routeMapNode,
         headingIndicatorNode,
         headingLabelNode,
         headingNode,
@@ -356,6 +358,7 @@ export function initEventPlayer() {
         syncBrakeUI,
         syncSpeedUI,
         syncFsdPercentUI,
+        syncRouteMapUI,
     } = createEventPlayerHudController({
         getPlaylist: () => playlist,
         getPendingEventTime: () => pendingEventTime,
@@ -365,6 +368,7 @@ export function initEventPlayer() {
         eventHasAutopilotActivity,
         eventHasSteeringAngleData,
         eventDriverAssistDisplay,
+        eventRouteSvgUrl,
         speedNode,
         blinkerLeftNode,
         headingIndicatorNode,
@@ -374,6 +378,7 @@ export function initEventPlayer() {
         brakeNode,
         blinkerRightNode,
         fsdPercentNode,
+        routeMapNode,
     });
 
     function syncTimelineUI() {
@@ -467,6 +472,7 @@ export function initEventPlayer() {
         syncFsdPercentUI();
         syncTrimUI(totalDuration);
         syncCameraMarkerUI(totalDuration);
+        syncRouteMapUI(eventTime);
     }
 
     function togglePlayback() {

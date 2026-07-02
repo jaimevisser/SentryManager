@@ -31,7 +31,6 @@ This file tracks remaining delivery work. Implemented behavior belongs in the RE
 
 - [ ] Continue splitting the remaining oversized renderer and telemetry modules so composition roots stay reviewable and testable.
 - [ ] Add structured logging for discovery, telemetry extraction, editing, and export jobs.
-- [ ] Audit the player-route load path for other avoidable per-load preprocessing beyond SEI sidecar reuse.
 - [ ] Decide whether to ship an optional dedicated-worker compose override for heavier render workloads on top of the new single-container default.
 - [ ] Expand automated tests for discovery, playlist building, telemetry decoding, and remaining timeline/export paths.
 - [ ] Add health checks and failure reporting for stack deployment.

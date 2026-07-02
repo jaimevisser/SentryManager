@@ -31,6 +31,28 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
 
         return send_file(sidecar_file, mimetype="application/octet-stream", conditional=True)
 
+    @app.route("/event-route-svg/<path:event_path>/<segment_key>")
+    def event_route_svg(event_path: str, segment_key: str):
+        footage_root = frontend_module.get_footage_root(app)
+        event_dir = frontend_module.require_event_dir(footage_root, event_path)
+
+        route_svg_file = frontend_module.get_segment_route_svg_path(event_dir, segment_key)
+        if not route_svg_file.is_file() or not frontend_module._is_within_root(route_svg_file, footage_root):
+            abort(404)
+
+        return send_file(route_svg_file, mimetype="image/svg+xml", conditional=True)
+
+    @app.route("/event-route-svg-combined/<path:event_path>")
+    def event_route_svg_combined(event_path: str):
+        footage_root = frontend_module.get_footage_root(app)
+        event_dir = frontend_module.require_event_dir(footage_root, event_path)
+
+        route_svg_file = frontend_module.get_event_route_svg_path(event_dir)
+        if not route_svg_file.is_file() or not frontend_module._is_within_root(route_svg_file, footage_root):
+            abort(404)
+
+        return send_file(route_svg_file, mimetype="image/svg+xml", conditional=True)
+
     @app.route("/events/<path:event_path>")
     def event_player(event_path: str):
         footage_root = frontend_module.get_footage_root(app)

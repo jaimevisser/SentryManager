@@ -45,6 +45,7 @@ export function createStageSafeZoneController({
             applyStageSafeZone(stageSafeZones.left, null);
             applyStageSafeZone(stageSafeZones.right, null);
             applyStageSafeZone(stageSafeZones.topLeft, null);
+            applyStageSafeZone(stageSafeZones.topRight, null);
             return;
         }
 
@@ -54,6 +55,7 @@ export function createStageSafeZoneController({
             applyStageSafeZone(stageSafeZones.left, null);
             applyStageSafeZone(stageSafeZones.right, null);
             applyStageSafeZone(stageSafeZones.topLeft, null);
+            applyStageSafeZone(stageSafeZones.topRight, null);
             return;
         }
 
@@ -66,6 +68,7 @@ export function createStageSafeZoneController({
             applyStageSafeZone(stageSafeZones.left, null);
             applyStageSafeZone(stageSafeZones.right, null);
             applyStageSafeZone(stageSafeZones.topLeft, null);
+            applyStageSafeZone(stageSafeZones.topRight, null);
             return;
         }
 
@@ -125,9 +128,11 @@ export function createStageSafeZoneController({
         const leftRect = getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, "left");
         const rightRect = getBottomCornerSafeRect(contentRects, frameWidth, frameHeight, "right");
         const topLeftRect = getTopCornerSafeRect(contentRects, frameWidth, frameHeight, "left");
+        const topRightRect = getTopCornerSafeRect(contentRects, frameWidth, frameHeight, "right");
         applyStageSafeZone(stageSafeZones.left, leftRect);
         applyStageSafeZone(stageSafeZones.right, rightRect);
         applyStageSafeZone(stageSafeZones.topLeft, topLeftRect);
+        applyStageSafeZone(stageSafeZones.topRight, topRightRect);
     }
 
     function scheduleStageSafeZoneUpdate() {

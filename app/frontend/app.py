@@ -22,7 +22,14 @@ from ..renderer import (
     get_render_job,
     start_render_worker_thread,
 )
-from ..sei import ensure_sei_sidecars, get_event_processing_marker_path, get_segment_sei_sidecar_path
+from ..sei import (
+    ensure_sei_sidecars,
+    event_needs_route_backfill,
+    get_event_route_svg_path,
+    get_event_processing_marker_path,
+    get_segment_route_svg_path,
+    get_segment_sei_sidecar_path,
+)
 from .routes import register_routes
 
 
@@ -112,7 +119,7 @@ def is_event_indexed(event_dir: Path) -> bool:
 
 
 def queue_event_processing(event_dir: Path) -> None:
-    if is_event_indexed(event_dir):
+    if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir):
         return
 
     with _EVENT_INDEXING_LOCK:
@@ -132,7 +139,7 @@ def _run_event_processing_worker() -> None:
     while True:
         event_dir = _EVENT_INDEXING_QUEUE.get()
         try:
-            if is_event_indexed(event_dir):
+            if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir):
                 continue
 
             clip_files = get_event_clip_files(event_dir)
@@ -215,6 +222,8 @@ def build_playlist_payload(
                 "url": url_for("event_clip", clip_path=clip.file_path),
                 "hasTelemetry": get_segment_sei_sidecar_path(event_dir, clip.segment_key).is_file(),
                 "telemetryUrl": url_for("event_telemetry", event_path=event_path, segment_key=clip.segment_key),
+                "hasRouteSvg": get_segment_route_svg_path(event_dir, clip.segment_key).is_file(),
+                "routeSvgUrl": url_for("event_route_svg", event_path=event_path, segment_key=clip.segment_key),
             }
             for clip in clips
         ]
@@ -246,6 +255,9 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     overlay_date_label = event_summary.timestamp.strftime("%d-%m-%Y") if event_summary.timestamp else None
     overlay_time_label = event_summary.timestamp.strftime("%H:%M") if event_summary.timestamp else None
     event_timestamp_iso = event_summary.timestamp.isoformat() if event_summary.timestamp else None
+    event_route_svg_url = None
+    if get_event_route_svg_path(event_dir).is_file():
+        event_route_svg_url = url_for("event_route_svg_combined", event_path=event_summary.path)
 
     return {
         "event": event_summary,
@@ -267,6 +279,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
         "overlay_date_label": overlay_date_label,
         "overlay_time_label": overlay_time_label,
         "event_timestamp_iso": event_timestamp_iso,
+        "event_route_svg_url": event_route_svg_url,
         "page_delete_event_path": event_summary.path,
         "page_delete_redirect_url": url_for("index"),
         "page_title": f"{event_summary.day_label} Player | SentryManager",
