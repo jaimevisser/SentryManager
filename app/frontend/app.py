@@ -47,6 +47,7 @@ CAMERA_LABELS = {
 
 PLAYER_LAYOUT_OPTIONS = {"single", "double", "triple"}
 EXPORT_FORMAT_OPTIONS = {"4k", "hd"}
+DEFAULT_SENTRY_PLAYER_PREROLL_SECONDS = 20.0
 
 SENTRY_EVENT_CAMERA_MAP = {
     "0": "front",
@@ -742,6 +743,22 @@ def get_saved_player_edits(event_processing_state: dict[str, object]) -> dict[st
     return normalize_saved_player_edits(event_processing_state.get("playerEdits"))
 
 
+def get_sentry_player_preroll_seconds() -> float:
+    raw_value = os.getenv("SENTRY_PLAYER_PREROLL_SECONDS")
+    if raw_value is None:
+        return DEFAULT_SENTRY_PLAYER_PREROLL_SECONDS
+
+    try:
+        parsed_value = float(raw_value)
+    except (TypeError, ValueError):
+        return DEFAULT_SENTRY_PLAYER_PREROLL_SECONDS
+
+    if not math.isfinite(parsed_value) or parsed_value < 0:
+        return DEFAULT_SENTRY_PLAYER_PREROLL_SECONDS
+
+    return parsed_value
+
+
 def serialize_render_job(event_path: str, job: dict[str, object]) -> dict[str, object]:
     serialized_job = dict(job)
     serialized_job["statusUrl"] = url_for("get_render_job_status", event_path=event_path, job_id=str(job.get("id") or ""))
@@ -766,7 +783,7 @@ def get_initial_player_start_time(event: EventSummary, saved_player_edits: dict[
                 return trim_start_time
 
     if event.category == "SentryClips" and event.trigger_offset_seconds is not None:
-        return max(0.0, event.trigger_offset_seconds - 60.0)
+        return max(0.0, event.trigger_offset_seconds - get_sentry_player_preroll_seconds())
     return 0.0
 
 

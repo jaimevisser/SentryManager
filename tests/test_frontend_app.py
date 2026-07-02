@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -86,6 +87,47 @@ class FrontendAppTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 self.assertEqual(expected_camera_key, frontend_app_module.load_event_trigger_camera_key(event_dir))
+
+    def test_get_initial_player_start_time_uses_sentry_preroll_env_var(self) -> None:
+        event = frontend_app_module.EventSummary(
+            name="2026-03-27_10-42-07",
+            path="SentryClips/2026-03-27_10-42-07",
+            category="SentryClips",
+            category_label="Sentry",
+            clip_count=1,
+            cameras=["Front"],
+            timestamp=None,
+            day_label="Unknown day",
+            time_label="Unknown time",
+            thumbnail_path=None,
+            location_label=None,
+            trigger_offset_seconds=100.0,
+        )
+
+        with mock.patch.dict(os.environ, {"SENTRY_PLAYER_PREROLL_SECONDS": "20"}, clear=False):
+            self.assertEqual(80.0, frontend_app_module.get_initial_player_start_time(event))
+
+        with mock.patch.dict(os.environ, {"SENTRY_PLAYER_PREROLL_SECONDS": "5"}, clear=False):
+            self.assertEqual(95.0, frontend_app_module.get_initial_player_start_time(event))
+
+    def test_get_initial_player_start_time_falls_back_to_default_for_invalid_sentry_preroll(self) -> None:
+        event = frontend_app_module.EventSummary(
+            name="2026-03-27_10-42-07",
+            path="SentryClips/2026-03-27_10-42-07",
+            category="SentryClips",
+            category_label="Sentry",
+            clip_count=1,
+            cameras=["Front"],
+            timestamp=None,
+            day_label="Unknown day",
+            time_label="Unknown time",
+            thumbnail_path=None,
+            location_label=None,
+            trigger_offset_seconds=100.0,
+        )
+
+        with mock.patch.dict(os.environ, {"SENTRY_PLAYER_PREROLL_SECONDS": "not-a-number"}, clear=False):
+            self.assertEqual(80.0, frontend_app_module.get_initial_player_start_time(event))
 
 
 if __name__ == "__main__":

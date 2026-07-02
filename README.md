@@ -124,6 +124,7 @@ docker compose down
 - `PORT`: Gunicorn bind port. Defaults to `8080`.
 - `RENDER_WORKER_ENABLED`: Starts the background render worker thread inside the app container. Defaults to `true`.
 - `RENDER_WORKER_POLL_INTERVAL_SECONDS`: Poll interval for the in-container render worker. Defaults to `1.0`.
+- `SENTRY_PLAYER_PREROLL_SECONDS`: Default lead-in (seconds before the Sentry trigger marker) used when opening an event with no saved non-zero trim start. Defaults to `20`.
 
 Compose publishes the app on host port `8765` by default while the container continues to listen on `8080` internally.
 

@@ -99,3 +99,7 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 07:28 Fixed Sentry trigger-camera mapping in `app/frontend/app.py` so metadata camera IDs 3/5 and 4/6 are swapped to the correct side-pair perspectives (`3->left_pillar`, `5->left_repeater`, `4->right_pillar`, `6->right_repeater`).
 - 07:28 Added a regression test in `tests/test_frontend_app.py` that writes `event.json` with camera IDs 3, 4, 5, and 6 and asserts the corrected `load_event_trigger_camera_key()` results.
 - 07:28 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_frontend_app.py'` (4 passed).
+- 08:19 Changed Sentry initial playback default lead-in from 60 seconds to a configurable env var: `SENTRY_PLAYER_PREROLL_SECONDS` now drives the fallback start-time offset and defaults to 20 seconds.
+- 08:19 Wired the new env var into `docker-compose.yml` (`SENTRY_PLAYER_PREROLL_SECONDS: ${SENTRY_PLAYER_PREROLL_SECONDS:-20}`) and documented behavior in README Environment Variables.
+- 08:19 Added frontend-app unit coverage for configurable and invalid `SENTRY_PLAYER_PREROLL_SECONDS` handling in `tests/test_frontend_app.py`.
+- 08:19 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_frontend_app.py'` (6 passed), `python3 -m compileall app`, and `docker compose up -d --build app`.
