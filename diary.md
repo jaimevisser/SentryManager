@@ -91,3 +91,6 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 09:14 Added a centered `SentryManager` label above the export top-left eye icon while keeping the date/time/location stack below it.
 - 09:14 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_renderer_pipeline.py'`.
 - 21:21 Updated `.github/workflows/publish-docker.yml` to publish a multi-arch GHCR image manifest for `linux/amd64`, `linux/arm64`, and `linux/arm/v7` (instead of amd64-only), adding QEMU setup so ARM variants can be built on the GitHub-hosted runner.
+- 21:31 Investigated failed run `28542116791` via `gh run view --job 84618298363 --log`; root cause was `linux/arm/v7` building `Pillow` from source without system build headers (`zlib` missing). Updated `Dockerfile` apt packages to include `build-essential`, `zlib1g-dev`, `libjpeg62-turbo-dev`, and `libopenjp2-7-dev` so ARM source builds succeed.
+- 21:31 Validation: `docker build -t sentrymanager:localfix .` completed successfully after the dependency change.
+- 21:38 Confirmed the previously failing platform by running `docker buildx build --platform linux/arm/v7 -t sentrymanager:armv7-test --load .`; build completed (`exit_code:0`) and `Pillow` wheel compilation finished successfully on arm/v7.

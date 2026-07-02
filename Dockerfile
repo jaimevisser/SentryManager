@@ -9,7 +9,12 @@ WORKDIR /app
 
 COPY requirements.txt ./
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ffmpeg \
+    && apt-get install --no-install-recommends -y \
+        ffmpeg \
+        build-essential \
+        zlib1g-dev \
+        libjpeg62-turbo-dev \
+        libopenjp2-7-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r requirements.txt
 
