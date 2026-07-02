@@ -68,6 +68,25 @@ class FrontendAppTests(unittest.TestCase):
         queue_mock.assert_called_once_with(event_dir)
         self.assertFalse((event_dir / "sentrymanager.json").exists())
 
+    def test_load_event_trigger_camera_key_uses_swapped_sentry_side_pairs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event_dir = Path(temp_dir) / "SentryClips" / "2026-03-27_10-42-07"
+            event_dir.mkdir(parents=True)
+
+            expected_camera_keys = {
+                3: "left_pillar",
+                4: "right_pillar",
+                5: "left_repeater",
+                6: "right_repeater",
+            }
+
+            for camera_number, expected_camera_key in expected_camera_keys.items():
+                (event_dir / "event.json").write_text(
+                    f'{{"camera": {camera_number}}}',
+                    encoding="utf-8",
+                )
+                self.assertEqual(expected_camera_key, frontend_app_module.load_event_trigger_camera_key(event_dir))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,3 +94,8 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 21:31 Investigated failed run `28542116791` via `gh run view --job 84618298363 --log`; root cause was `linux/arm/v7` building `Pillow` from source without system build headers (`zlib` missing). Updated `Dockerfile` apt packages to include `build-essential`, `zlib1g-dev`, `libjpeg62-turbo-dev`, and `libopenjp2-7-dev` so ARM source builds succeed.
 - 21:31 Validation: `docker build -t sentrymanager:localfix .` completed successfully after the dependency change.
 - 21:38 Confirmed the previously failing platform by running `docker buildx build --platform linux/arm/v7 -t sentrymanager:armv7-test --load .`; build completed (`exit_code:0`) and `Pillow` wheel compilation finished successfully on arm/v7.
+
+### 2026-07-02
+- 07:28 Fixed Sentry trigger-camera mapping in `app/frontend/app.py` so metadata camera IDs 3/5 and 4/6 are swapped to the correct side-pair perspectives (`3->left_pillar`, `5->left_repeater`, `4->right_pillar`, `6->right_repeater`).
+- 07:28 Added a regression test in `tests/test_frontend_app.py` that writes `event.json` with camera IDs 3, 4, 5, and 6 and asserts the corrected `load_event_trigger_camera_key()` results.
+- 07:28 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_frontend_app.py'` (4 passed).

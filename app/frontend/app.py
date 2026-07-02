@@ -50,10 +50,10 @@ EXPORT_FORMAT_OPTIONS = {"4k", "hd"}
 
 SENTRY_EVENT_CAMERA_MAP = {
     "0": "front",
-    "3": "left_repeater",
-    "4": "right_repeater",
-    "5": "left_pillar",
-    "6": "right_pillar",
+    "3": "left_pillar",
+    "4": "right_pillar",
+    "5": "left_repeater",
+    "6": "right_repeater",
     "7": "back",
 }
 
