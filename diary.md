@@ -103,3 +103,7 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 08:19 Wired the new env var into `docker-compose.yml` (`SENTRY_PLAYER_PREROLL_SECONDS: ${SENTRY_PLAYER_PREROLL_SECONDS:-20}`) and documented behavior in README Environment Variables.
 - 08:19 Added frontend-app unit coverage for configurable and invalid `SENTRY_PLAYER_PREROLL_SECONDS` handling in `tests/test_frontend_app.py`.
 - 08:19 Validation: `docker compose run --rm -v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro" app python -m unittest discover -s tests -p 'test_frontend_app.py'` (6 passed), `python3 -m compileall app`, and `docker compose up -d --build app`.
+- 09:02 Tersified `README.md` for end users and moved contributor/internal material (architecture, roadmap, workflow, publishing, validation) into new `DEVELOPMENT.md`.
+- 09:02 README now assumes image-first usage with `ghcr.io/jaimevisser/sentrymanager:2026.07.8`, including both `docker run` and Compose examples that mount TeslaCam at `/data/TeslaCam`.
+- 09:16 Replaced fixed image tag examples in `README.md` with `ghcr.io/jaimevisser/sentrymanager:latest` and added a direct link to the package page for users who want pinned version tags.
+- 09:21 Added a brief README versioning policy note clarifying that examples use `latest` for convenience and that pinned tags are recommended for reproducible deployments; converted the package URL to a labeled markdown link.
