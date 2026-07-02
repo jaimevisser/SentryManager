@@ -85,6 +85,7 @@ export function initEventPlayer() {
         renderStatusNode,
         scrubber,
         secondaryPlayers,
+        playFromStartButton,
         setEndButton,
         setStartButton,
         speedNode,
@@ -299,6 +300,10 @@ export function initEventPlayer() {
         return editingController ? editingController.getTrimEndTime() : 0;
     }
 
+    function applyStartMarkerViewSelection(options = {}) {
+        return editingController ? editingController.applyStartMarkerViewSelection(options) : false;
+    }
+
     function findClipForEventTime(eventTime) {
         return playbackController
             ? playbackController.findClipForEventTime(eventTime)
@@ -486,6 +491,21 @@ export function initEventPlayer() {
         player.pause();
     }
 
+    function playFromStartMarker() {
+        const totalDuration = getTotalDuration();
+        if (totalDuration <= 0) {
+            return;
+        }
+
+        const startTime = Math.min(Math.max(getTrimStartTime(), 0), totalDuration);
+        const appliedViewSelection = applyStartMarkerViewSelection({ autoplay: true });
+        if (appliedViewSelection) {
+            return;
+        }
+
+        seekToEventTime(startTime, { autoplay: true });
+    }
+
     editingController = createEventPlayerEditingController({
         documentObject: document,
         player,
@@ -584,6 +604,10 @@ export function initEventPlayer() {
 
     if (toggleButton) {
         toggleButton.addEventListener("click", togglePlayback);
+    }
+
+    if (playFromStartButton) {
+        playFromStartButton.addEventListener("click", playFromStartMarker);
     }
 
     for (const button of layoutButtons) {

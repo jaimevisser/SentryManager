@@ -413,6 +413,25 @@ export function createEventPlayerEditingController({
         return applyPlaybackCameraMarker(currentMarker, eventTime, options);
     }
 
+    function applyStartMarkerViewSelection(options = {}) {
+        const totalDuration = getTotalDuration();
+        if (totalDuration <= 0) {
+            return false;
+        }
+
+        normalizeViewSelection(startMarkerViewSelection);
+        const eventTime = Math.min(Math.max(trimStartTime, 0), totalDuration);
+        const autoplay = typeof options.autoplay === "boolean" ? options.autoplay : true;
+
+        manualViewOverrideActive = false;
+        manualViewOverrideMarkerId = null;
+        activePlaybackCameraMarkerId = "start";
+        return applyViewSelection(startMarkerViewSelection.layout, startMarkerViewSelection.cameraKey, {
+            eventTime,
+            autoplay,
+        });
+    }
+
     function getMinimumTrimGap(totalDuration) {
         return totalDuration >= 5 ? 5 : Math.max(0, totalDuration);
     }
@@ -624,6 +643,7 @@ export function createEventPlayerEditingController({
         syncPlaybackMarkerCheckpoint,
         maybeApplyPlaybackCameraMarker,
         maybeApplyCurrentPlaybackViewMarker,
+        applyStartMarkerViewSelection,
         noteManualViewSelectionOverride,
         bindEditingControls,
     };

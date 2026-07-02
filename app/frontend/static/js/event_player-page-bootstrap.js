@@ -84,6 +84,7 @@ export function queryEventPlayerNodes(documentObject) {
         renderStatusNode: documentObject.querySelector("[data-player-render-status]"),
         toggleButton: documentObject.querySelector("[data-player-toggle]"),
         toggleIcon: documentObject.querySelector("[data-player-toggle-icon]"),
+        playFromStartButton: documentObject.querySelector("[data-player-play-from-start]"),
         layoutButtons: Array.from(documentObject.querySelectorAll("[data-layout-option]")),
         cameraButtons: Array.from(documentObject.querySelectorAll("[data-camera-target]")),
         stageSurface: documentObject.querySelector("[data-player-stage-surface]"),

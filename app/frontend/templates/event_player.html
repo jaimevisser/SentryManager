@@ -289,6 +289,16 @@
                         </button>
                         <button class="player-marker-action-button"
                                 type="button"
+                                data-player-play-from-start
+                                aria-label="Play from start marker"
+                                title="Play from start marker">
+                            <img class="player-marker-action-icon"
+                                 src="{{ url_for('static', filename='mdi/movie-open-outline.svg') }}"
+                                 alt=""
+                                 aria-hidden="true">
+                        </button>
+                        <button class="player-marker-action-button"
+                                type="button"
                                 data-player-set-start
                                 aria-label="Set start marker at the current time"
                                 title="Set start marker at the current time">
