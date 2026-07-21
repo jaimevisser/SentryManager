@@ -22,7 +22,10 @@
                         {% for event in day_group.events %}
                             <article class="photo-card{% if loop.first and day_group.event_count > 1 %} photo-card-featured{% endif %}"
                                      data-index-card
-                                     data-event-path="{{ event.path }}">
+                                     data-event-path="{{ event.path }}"
+                                     data-event-category="{{ event.category }}"
+                                     data-event-timestamp="{{ event.timestamp.isoformat() if event.timestamp else '' }}"
+                                     data-event-end-timestamp="{{ event.end_timestamp.isoformat() if event.end_timestamp else '' }}">
                                 <a class="photo-link" data-photo-link href="{{ url_for('event_player', event_path=event.path) }}">
                                     <div class="photo-frame">
                                         {% if event.thumbnail_path %}

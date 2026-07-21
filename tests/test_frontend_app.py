@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -102,6 +103,7 @@ class FrontendAppTests(unittest.TestCase):
             thumbnail_path=None,
             location_label=None,
             trigger_offset_seconds=100.0,
+            end_timestamp=None,
         )
 
         with mock.patch.dict(os.environ, {"SENTRY_PLAYER_PREROLL_SECONDS": "20"}, clear=False):
@@ -124,10 +126,146 @@ class FrontendAppTests(unittest.TestCase):
             thumbnail_path=None,
             location_label=None,
             trigger_offset_seconds=100.0,
+            end_timestamp=None,
         )
 
         with mock.patch.dict(os.environ, {"SENTRY_PLAYER_PREROLL_SECONDS": "not-a-number"}, clear=False):
             self.assertEqual(80.0, frontend_app_module.get_initial_player_start_time(event))
+
+    def test_discover_event_directories_hides_combined_children(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedIntoClipName": owner_dir.name}),
+                encoding="utf-8",
+            )
+
+            event_directories = frontend_app_module.discover_event_directories(footage_root)
+
+        self.assertEqual([owner_dir], event_directories)
+
+    def test_build_camera_playlists_payload_includes_combined_member_clips(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedEvent": {"memberClipNames": [child_dir.name]}}),
+                encoding="utf-8",
+            )
+
+            playlists = frontend_app_module.build_camera_playlists_payload(owner_dir, footage_root)
+
+        self.assertEqual(2, len(playlists["front"]))
+        self.assertEqual("SavedClips/2026-03-31_06-53-21", playlists["front"][0].source_event_path)
+        self.assertEqual("SavedClips/2026-03-31_06-54-21", playlists["front"][1].source_event_path)
+
+    def test_combine_events_route_persists_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                response = app.test_client().post(
+                    "/events/combine",
+                    json={
+                        "eventPaths": [
+                            "SavedClips/2026-03-31_06-54-21",
+                            "SavedClips/2026-03-31_06-53-21",
+                        ],
+                    },
+                )
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+            owner_state = json.loads((owner_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+            child_state = json.loads((child_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+            visible_directories = frontend_app_module.discover_event_directories(footage_root)
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(["2026-03-31_06-54-21"], owner_state["combinedEvent"]["memberClipNames"])
+        self.assertEqual("2026-03-31_06-53-21", child_state["combinedIntoClipName"])
+        self.assertEqual([owner_dir], visible_directories)
+
+    def test_uncombine_event_directory_clears_combined_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedEvent": {"memberClipNames": [child_dir.name]}}),
+                encoding="utf-8",
+            )
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedIntoClipName": owner_dir.name}),
+                encoding="utf-8",
+            )
+
+            result = frontend_app_module.uncombine_event_directory(owner_dir)
+
+            owner_state = json.loads((owner_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+            child_state = json.loads((child_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+            visible_directories = frontend_app_module.discover_event_directories(footage_root)
+
+        self.assertTrue(result)
+        self.assertNotIn("combinedEvent", owner_state)
+        self.assertNotIn("combinedIntoClipName", child_state)
+        self.assertEqual([owner_dir, child_dir], visible_directories)
+
+    def test_uncombine_event_route_clears_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedEvent": {"memberClipNames": [child_dir.name]}}),
+                encoding="utf-8",
+            )
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedIntoClipName": owner_dir.name}),
+                encoding="utf-8",
+            )
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                response = app.test_client().post("/events/SavedClips/2026-03-31_06-53-21/uncombine")
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+            owner_state = json.loads((owner_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+            child_state = json.loads((child_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(200, response.status_code)
+        self.assertNotIn("combinedEvent", owner_state)
+        self.assertNotIn("combinedIntoClipName", child_state)
 
 
 if __name__ == "__main__":

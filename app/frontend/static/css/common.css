@@ -140,6 +140,14 @@ a {
     right: calc(var(--header-side-padding) + var(--header-height) + 0.75rem);
 }
 
+.header-selection-action-combine {
+    right: calc(var(--header-side-padding) + 3.5rem);
+}
+
+.header-selection-action-uncombine {
+    right: calc(var(--header-side-padding) + var(--header-height) + 4.25rem);
+}
+
 .selection-delete-modal {
     padding: 0;
     border: 0;

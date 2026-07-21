@@ -14,6 +14,17 @@ function getDeletePrompt(selectionCount) {
     };
 }
 
+function getPrompt(options) {
+    if (options && typeof options === "object") {
+        const title = typeof options.title === "string" ? options.title : "Confirm action?";
+        const message = typeof options.message === "string" ? options.message : "";
+        const actionLabel = typeof options.actionLabel === "string" ? options.actionLabel : "Confirm";
+        return { title, message, actionLabel };
+    }
+
+    return getDeletePrompt(typeof options === "number" ? options : 1);
+}
+
 export function createDeleteModalController() {
     const deleteModal = document.querySelector("[data-index-delete-modal]");
     const deleteModalPanel = deleteModal?.querySelector(".selection-delete-modal-panel") || null;
@@ -26,8 +37,8 @@ export function createDeleteModalController() {
         return Boolean(deleteModal?.open);
     }
 
-    function show(selectionCount) {
-        const prompt = getDeletePrompt(selectionCount);
+    function show(options) {
+        const prompt = getPrompt(options);
 
         if (!deleteModal || typeof deleteModal.showModal !== "function") {
             return Promise.resolve(window.confirm(prompt.title));

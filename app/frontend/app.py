@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import math
 import os
@@ -55,6 +55,11 @@ CAMERA_LABELS = {
 PLAYER_LAYOUT_OPTIONS = {"single", "double", "triple"}
 EXPORT_FORMAT_OPTIONS = {"4k", "hd"}
 DEFAULT_SENTRY_PLAYER_PREROLL_SECONDS = 20.0
+COMBINED_EVENT_KEY = "combinedEvent"
+COMBINED_EVENT_MEMBERS_KEY = "memberClipNames"
+COMBINED_INTO_KEY = "combinedIntoClipName"
+COMBINE_SEGMENT_SECONDS = 60.0
+COMBINE_MARGIN_SECONDS = 1.0
 
 SENTRY_EVENT_CAMERA_MAP = {
     "0": "front",
@@ -80,6 +85,7 @@ class EventSummary:
     thumbnail_path: str | None
     location_label: str | None
     trigger_offset_seconds: float | None
+    end_timestamp: datetime | None
 
 
 @dataclass
@@ -98,6 +104,7 @@ class EventClip:
     segment_label: str
     file_name: str
     file_path: str
+    source_event_path: str
 
 
 _EVENT_SUMMARY_CACHE: dict[
@@ -190,6 +197,227 @@ def require_file_path(footage_root: Path, relative_path: str) -> Path:
     return file_path
 
 
+def get_event_relative_path(event_dir: Path, footage_root: Path) -> str:
+    return str(event_dir.relative_to(footage_root) if event_dir != footage_root else Path("."))
+
+
+def get_direct_event_clip_files(event_dir: Path) -> list[Path]:
+    return sorted(event_dir.glob("*.mp4"), key=lambda path: path.name.lower())
+
+
+def _normalize_combined_member_names(payload: object) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+
+    raw_member_names = payload.get(COMBINED_EVENT_MEMBERS_KEY)
+    if not isinstance(raw_member_names, list):
+        return []
+
+    member_names: list[str] = []
+    seen_names: set[str] = set()
+    for raw_name in raw_member_names:
+        if not isinstance(raw_name, str):
+            continue
+        normalized_name = raw_name.strip()
+        if not normalized_name or normalized_name in seen_names:
+            continue
+        if Path(normalized_name).name != normalized_name:
+            continue
+        seen_names.add(normalized_name)
+        member_names.append(normalized_name)
+    return member_names
+
+
+def get_combined_event_member_names(processing_state: dict[str, object]) -> list[str]:
+    return _normalize_combined_member_names(processing_state.get(COMBINED_EVENT_KEY))
+
+
+def has_combined_event_members(processing_state: dict[str, object]) -> bool:
+    return len(get_combined_event_member_names(processing_state)) > 0
+
+
+def get_combined_owner_name(processing_state: dict[str, object]) -> str | None:
+    raw_owner_name = processing_state.get(COMBINED_INTO_KEY)
+    if not isinstance(raw_owner_name, str):
+        return None
+
+    normalized_owner_name = raw_owner_name.strip()
+    if not normalized_owner_name or Path(normalized_owner_name).name != normalized_owner_name:
+        return None
+    return normalized_owner_name
+
+
+def get_combined_event_directories(event_dir: Path) -> list[Path]:
+    processing_state = load_event_processing_state(event_dir)
+    member_names = get_combined_event_member_names(processing_state)
+    if not member_names:
+        return [event_dir]
+
+    event_directories = [event_dir]
+    seen_directories = {event_dir.resolve()}
+    for member_name in member_names:
+        member_dir = event_dir.parent / member_name
+        resolved_member_dir = member_dir.resolve()
+        if resolved_member_dir in seen_directories or not member_dir.is_dir():
+            continue
+        seen_directories.add(resolved_member_dir)
+        event_directories.append(member_dir)
+    return event_directories
+
+
+def get_event_clip_files(event_dir: Path) -> list[Path]:
+    clip_files: list[Path] = []
+    for clip_event_dir in get_combined_event_directories(event_dir):
+        clip_files.extend(get_direct_event_clip_files(clip_event_dir))
+    return sorted(clip_files, key=lambda path: path.name.lower())
+
+
+def infer_event_time_window_from_clip_files(clip_files: list[Path]) -> tuple[datetime, datetime] | None:
+    segment_timestamps = sorted({
+        infer_event_timestamp(split_clip_stem(path.stem)[0])
+        for path in clip_files
+    })
+    valid_segment_timestamps = [timestamp for timestamp in segment_timestamps if timestamp is not None]
+    if not valid_segment_timestamps:
+        return None
+
+    window_start = valid_segment_timestamps[0]
+    window_end = valid_segment_timestamps[-1] + timedelta(seconds=COMBINE_SEGMENT_SECONDS)
+    return window_start, window_end
+
+
+def infer_event_time_window(event_dir: Path) -> tuple[datetime, datetime] | None:
+    return infer_event_time_window_from_clip_files(get_direct_event_clip_files(event_dir))
+
+
+def is_hidden_combined_event(event_dir: Path) -> bool:
+    return get_combined_owner_name(load_event_processing_state(event_dir)) is not None
+
+
+def expand_selected_event_directories(event_directories: list[Path]) -> list[Path]:
+    expanded_directories: list[Path] = []
+    seen_directories: set[Path] = set()
+    for event_dir in event_directories:
+        for resolved_event_dir in get_combined_event_directories(event_dir):
+            if resolved_event_dir in seen_directories:
+                continue
+            seen_directories.add(resolved_event_dir)
+            expanded_directories.append(resolved_event_dir)
+    return expanded_directories
+
+
+def is_saved_event_directory(event_dir: Path, footage_root: Path) -> bool:
+    relative_path = event_dir.relative_to(footage_root) if event_dir != footage_root else Path(".")
+    return len(relative_path.parts) > 1 and relative_path.parts[0] == "SavedClips"
+
+
+def get_combinable_event_directories(
+    footage_root: Path,
+    event_directories: list[Path],
+) -> tuple[Path, list[Path]] | tuple[None, str]:
+    if len(event_directories) < 2:
+        return None, "Select at least two clips to combine."
+
+    for event_dir in event_directories:
+        if get_combined_owner_name(load_event_processing_state(event_dir)) is not None:
+            return None, "Combined child clips cannot be merged directly."
+        if not is_saved_event_directory(event_dir, footage_root):
+            return None, "Only Saved clips can be combined."
+
+    expanded_directories = expand_selected_event_directories(event_directories)
+    if len(expanded_directories) < 2:
+        return None, "Select at least two clips to combine."
+
+    category_parent = expanded_directories[0].parent
+    event_windows: list[tuple[Path, datetime, datetime]] = []
+    for event_dir in expanded_directories:
+        if event_dir.parent != category_parent:
+            return None, "Only consecutive clips from the same SavedClips folder can be combined."
+        event_window = infer_event_time_window(event_dir)
+        if event_window is None:
+            return None, f"Could not read clip timing for {event_dir.name}."
+        event_windows.append((event_dir, event_window[0], event_window[1]))
+
+    ordered_windows = sorted(event_windows, key=lambda item: item[1])
+    for current_window, next_window in zip(ordered_windows, ordered_windows[1:]):
+        gap_seconds = abs((next_window[1] - current_window[2]).total_seconds())
+        if gap_seconds > COMBINE_MARGIN_SECONDS:
+            return None, "Selected clips must be consecutive within one second."
+
+    owner_dir = ordered_windows[0][0]
+    ordered_directories = [event_dir for event_dir, _, _ in ordered_windows]
+    return owner_dir, ordered_directories
+
+
+def combine_event_directories(
+    footage_root: Path,
+    event_directories: list[Path],
+) -> tuple[Path, list[Path]] | tuple[None, str]:
+    owner_dir, ordered_directories_or_error = get_combinable_event_directories(footage_root, event_directories)
+    if owner_dir is None:
+        return None, ordered_directories_or_error
+
+    ordered_directories = ordered_directories_or_error
+    owner_processing_state = load_event_processing_state(owner_dir)
+    owner_processing_state[COMBINED_EVENT_KEY] = {
+        COMBINED_EVENT_MEMBERS_KEY: [event_dir.name for event_dir in ordered_directories if event_dir != owner_dir],
+    }
+    owner_processing_state.pop(COMBINED_INTO_KEY, None)
+    owner_processing_state.pop("playerEdits", None)
+    owner_processing_state.pop("normalizedEditSegments", None)
+    owner_processing_state.pop("latestRender", None)
+    try:
+        get_event_route_svg_path(owner_dir).unlink(missing_ok=True)
+    except OSError:
+        pass
+    write_event_processing_state(owner_dir, owner_processing_state)
+
+    for event_dir in ordered_directories:
+        if event_dir == owner_dir:
+            continue
+        processing_state = load_event_processing_state(event_dir)
+        processing_state.pop(COMBINED_EVENT_KEY, None)
+        processing_state[COMBINED_INTO_KEY] = owner_dir.name
+        processing_state.pop("playerEdits", None)
+        processing_state.pop("normalizedEditSegments", None)
+        processing_state.pop("latestRender", None)
+        write_event_processing_state(event_dir, processing_state)
+
+    clear_event_summary_cache()
+    return owner_dir, ordered_directories
+
+
+def uncombine_event_directory(event_dir: Path) -> bool:
+    owner_processing_state = load_event_processing_state(event_dir)
+    member_names = get_combined_event_member_names(owner_processing_state)
+    if not member_names:
+        return False
+
+    owner_processing_state.pop(COMBINED_EVENT_KEY, None)
+    owner_processing_state.pop("playerEdits", None)
+    owner_processing_state.pop("normalizedEditSegments", None)
+    owner_processing_state.pop("latestRender", None)
+    write_event_processing_state(event_dir, owner_processing_state)
+
+    for member_name in member_names:
+        member_dir = event_dir.parent / member_name
+        if not member_dir.is_dir():
+            continue
+        member_processing_state = load_event_processing_state(member_dir)
+        member_processing_state.pop(COMBINED_INTO_KEY, None)
+        member_processing_state.pop("playerEdits", None)
+        member_processing_state.pop("normalizedEditSegments", None)
+        member_processing_state.pop("latestRender", None)
+        write_event_processing_state(member_dir, member_processing_state)
+
+    clear_event_summary_cache()
+    return True
+
+
+def get_delete_target_directories(event_directories: list[Path]) -> list[Path]:
+    return expand_selected_event_directories(event_directories)
+
+
 def persist_normalized_edit_segments(
     event_dir: Path,
     event_processing_state: dict[str, object],
@@ -211,6 +439,7 @@ def persist_normalized_edit_segments(
 def build_playlist_payload(
     event_dir: Path,
     event_path: str,
+    footage_root: Path,
     camera_playlists: dict[str, list[EventClip]],
 ) -> dict[str, list[dict[str, object]]]:
     return {
@@ -220,10 +449,10 @@ def build_playlist_payload(
                 "segmentLabel": clip.segment_label,
                 "fileName": clip.file_name,
                 "url": url_for("event_clip", clip_path=clip.file_path),
-                "hasTelemetry": get_segment_sei_sidecar_path(event_dir, clip.segment_key).is_file(),
-                "telemetryUrl": url_for("event_telemetry", event_path=event_path, segment_key=clip.segment_key),
-                "hasRouteSvg": get_segment_route_svg_path(event_dir, clip.segment_key).is_file(),
-                "routeSvgUrl": url_for("event_route_svg", event_path=event_path, segment_key=clip.segment_key),
+                "hasTelemetry": get_segment_sei_sidecar_path(resolve_path_within_footage_root(footage_root, clip.source_event_path), clip.segment_key).is_file(),
+                "telemetryUrl": url_for("event_telemetry", event_path=clip.source_event_path, segment_key=clip.segment_key),
+                "hasRouteSvg": get_segment_route_svg_path(resolve_path_within_footage_root(footage_root, clip.source_event_path), clip.segment_key).is_file(),
+                "routeSvgUrl": url_for("event_route_svg", event_path=clip.source_event_path, segment_key=clip.segment_key),
             }
             for clip in clips
         ]
@@ -246,7 +475,9 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
 
     default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
     event_processing_state = load_event_processing_state(event_dir)
-    event_driver_assist_display = get_event_driver_assist_display(event_processing_state)
+    has_combined_members = has_combined_event_members(event_processing_state)
+    combined_processing_states = [load_event_processing_state(member_dir) for member_dir in get_combined_event_directories(event_dir)]
+    event_driver_assist_display = None if has_combined_members else get_event_driver_assist_display(event_processing_state)
     saved_player_edits = get_saved_player_edits(event_processing_state)
     normalized_edit_segments = get_normalized_edit_segments(event_summary.path, saved_player_edits)
     persist_normalized_edit_segments(event_dir, event_processing_state, normalized_edit_segments)
@@ -256,16 +487,16 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     overlay_time_label = event_summary.timestamp.strftime("%H:%M") if event_summary.timestamp else None
     event_timestamp_iso = event_summary.timestamp.isoformat() if event_summary.timestamp else None
     event_route_svg_url = None
-    if get_event_route_svg_path(event_dir).is_file():
+    if not has_combined_members and get_event_route_svg_path(event_dir).is_file():
         event_route_svg_url = url_for("event_route_svg_combined", event_path=event_summary.path)
 
     return {
         "event": event_summary,
         "view_selector": build_view_selector(camera_playlists),
         "default_view_key": default_view_key,
-        "playlist_payload": build_playlist_payload(event_dir, event_summary.path, camera_playlists),
-        "event_has_autopilot_activity": event_processing_state.get("hasAutopilotActivity", False),
-        "event_has_steering_angle_data": event_processing_state.get("hasSteeringAngleData", False),
+        "playlist_payload": build_playlist_payload(event_dir, event_summary.path, footage_root, camera_playlists),
+        "event_has_autopilot_activity": any(state.get("hasAutopilotActivity", False) for state in combined_processing_states),
+        "event_has_steering_angle_data": any(state.get("hasSteeringAngleData", False) for state in combined_processing_states),
         "event_driver_assist_display": event_driver_assist_display,
         "event_marker_time": event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
         "initial_start_time": get_initial_player_start_time(event_summary, saved_player_edits),
@@ -282,6 +513,8 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
         "event_route_svg_url": event_route_svg_url,
         "page_delete_event_path": event_summary.path,
         "page_delete_redirect_url": url_for("index"),
+        "page_uncombine_event_path": event_summary.path if has_combined_members else None,
+        "page_uncombine_redirect_url": url_for("index") if has_combined_members else None,
         "page_title": f"{event_summary.day_label} Player | SentryManager",
         "page_description": f"Review TeslaCam clips for {event_summary.name}.",
         "page_shell_class": "page-shell-full",
@@ -346,10 +579,11 @@ def discover_event_directories(footage_root: Path) -> list[Path]:
         if not child.is_dir():
             continue
         if list(child.glob("*.mp4")):
-            event_directories.append(child)
+            if not is_hidden_combined_event(child):
+                event_directories.append(child)
             continue
         for grandchild in sorted(child.iterdir()):
-            if grandchild.is_dir() and list(grandchild.glob("*.mp4")):
+            if grandchild.is_dir() and list(grandchild.glob("*.mp4")) and not is_hidden_combined_event(grandchild):
                 event_directories.append(grandchild)
 
     return event_directories
@@ -381,10 +615,6 @@ def get_path_mtime_ns(path: Path) -> int:
         return -1
 
 
-def get_event_clip_files(event_dir: Path) -> list[Path]:
-    return sorted(event_dir.glob("*.mp4"))
-
-
 def summarize_event_dir(
     event_dir: Path,
     footage_root: Path,
@@ -395,11 +625,8 @@ def summarize_event_dir(
         return None
 
     cameras = sorted({infer_camera_name(path.name) for path in clip_files}, key=camera_sort_key)
-    segment_timestamps = [
-        infer_event_timestamp(split_clip_stem(path.stem)[0])
-        for path in clip_files
-    ]
-    first_segment_timestamp = min((timestamp for timestamp in segment_timestamps if timestamp is not None), default=None)
+    time_window = infer_event_time_window_from_clip_files(clip_files)
+    first_segment_timestamp = time_window[0] if time_window is not None else None
     relative_path = event_dir.relative_to(footage_root) if event_dir != footage_root else Path(".")
     timestamp = infer_event_timestamp(event_dir.name)
     category = relative_path.parts[0] if len(relative_path.parts) > 1 else "TeslaCam"
@@ -422,6 +649,7 @@ def summarize_event_dir(
         thumbnail_path=str(relative_path) if thumbnail_file.is_file() else None,
         location_label=location_label,
         trigger_offset_seconds=trigger_offset_seconds,
+        end_timestamp=time_window[1] if time_window is not None else None,
     )
 
 
@@ -468,7 +696,7 @@ def format_time_label(timestamp: datetime | None) -> str:
 
 def build_event_playlist(event_dir: Path, footage_root: Path, camera_key: str) -> list[EventClip]:
     playlist: list[EventClip] = []
-    for clip_file in sorted(event_dir.glob("*.mp4")):
+    for clip_file in get_event_clip_files(event_dir):
         segment_key, clip_camera_key = split_clip_stem(clip_file.stem)
         if clip_camera_key != camera_key:
             continue
@@ -480,6 +708,7 @@ def build_event_playlist(event_dir: Path, footage_root: Path, camera_key: str) -
                 segment_label=format_segment_label(segment_key),
                 file_name=clip_file.name,
                 file_path=str(clip_file.relative_to(footage_root)),
+                source_event_path=get_event_relative_path(clip_file.parent, footage_root),
             )
         )
     return playlist

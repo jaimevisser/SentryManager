@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -413,6 +414,51 @@ class RendererPipelineTests(unittest.TestCase):
         slot = render_plan["segments"][0]["slots"][0]
         self.assertEqual(1, len(slot["fragments"]))
         self.assertTrue(slot["fragments"][0]["sourceClip"].endswith("/2026-03-28_09-01-00-front.mp4"))
+        self.assertEqual(0.4, slot["fragments"][0]["sourceIn"])
+        self.assertEqual(1.4, slot["fragments"][0]["sourceOut"])
+
+    def test_build_render_plan_includes_combined_member_event_clips(self) -> None:
+        player_edits = {
+            "trimStartTime": 59.4,
+            "trimEndTime": 60.4,
+            "exportFormat": "hd",
+            "startMarkerView": {"layout": "single", "cameraKey": "front"},
+            "cameraMarkers": [],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-28_09-12-13"
+            child_dir = footage_root / "SavedClips" / "2026-03-28_09-13-13"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-28_09-12-13-front.mp4").touch()
+            (child_dir / "2026-03-28_09-13-13-front.mp4").touch()
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedEvent": {"memberClipNames": [child_dir.name]}}),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "app.renderer.pipeline._probe_video",
+                return_value={
+                    "duration": 59.0,
+                    "frame_rate": 30.0,
+                    "width": 1920,
+                    "height": 1080,
+                    "codec_name": "h264",
+                },
+            ):
+                render_plan = build_render_plan(
+                    event_dir=owner_dir,
+                    footage_root=footage_root,
+                    event_id="SavedClips/2026-03-28_09-12-13",
+                    player_edits=player_edits,
+                )
+
+        slot = render_plan["segments"][0]["slots"][0]
+        self.assertEqual(1, len(slot["fragments"]))
+        self.assertTrue(slot["fragments"][0]["sourceClip"].endswith("/2026-03-28_09-13-13-front.mp4"))
         self.assertEqual(0.4, slot["fragments"][0]["sourceIn"])
         self.assertEqual(1.4, slot["fragments"][0]["sourceOut"])
 

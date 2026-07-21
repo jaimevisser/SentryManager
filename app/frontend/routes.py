@@ -83,7 +83,7 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
             return jsonify({"error": "Select at least one clip to delete."}), 400
 
         footage_root = frontend_module.get_footage_root(app)
-        event_directories: list[Path] = []
+        selected_event_directories: list[Path] = []
         deleted_paths: list[str] = []
         seen_directories: set[Path] = set()
 
@@ -103,8 +103,10 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
                 continue
 
             seen_directories.add(event_dir)
-            event_directories.append(event_dir)
+            selected_event_directories.append(event_dir)
             deleted_paths.append(str(normalized_event_path))
+
+        event_directories = frontend_module.get_delete_target_directories(selected_event_directories)
 
         for event_dir in event_directories:
             try:
@@ -114,6 +116,58 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
 
         frontend_module.clear_event_summary_cache()
         return jsonify({"deletedPaths": deleted_paths})
+
+    @app.post("/events/combine")
+    def combine_events():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Invalid combine request."}), 400
+
+        raw_event_paths = payload.get("eventPaths")
+        if not isinstance(raw_event_paths, list) or len(raw_event_paths) == 0:
+            return jsonify({"error": "Select at least two clips to combine."}), 400
+
+        footage_root = frontend_module.get_footage_root(app)
+        event_directories: list[Path] = []
+        seen_directories: set[Path] = set()
+
+        for raw_event_path in raw_event_paths:
+            if not isinstance(raw_event_path, str) or not raw_event_path.strip():
+                return jsonify({"error": "Invalid clip selection."}), 400
+
+            normalized_event_path = Path(raw_event_path.strip())
+            event_dir = frontend_module.resolve_path_within_footage_root(footage_root, str(normalized_event_path))
+            if not event_dir.is_dir():
+                return jsonify({"error": f"Clip folder not found: {raw_event_path}"}), 404
+            if event_dir in seen_directories:
+                continue
+
+            seen_directories.add(event_dir)
+            event_directories.append(event_dir)
+
+        owner_dir, combined_or_error = frontend_module.combine_event_directories(footage_root, event_directories)
+        if owner_dir is None:
+            return jsonify({"error": combined_or_error}), 400
+
+        return jsonify({
+            "eventPath": frontend_module.get_event_relative_path(owner_dir, footage_root),
+            "combinedPaths": [frontend_module.get_event_relative_path(event_dir, footage_root) for event_dir in combined_or_error],
+        })
+
+    @app.post("/events/<path:event_path>/uncombine")
+    def uncombine_event(event_path: str):
+        footage_root = frontend_module.get_footage_root(app)
+        event_dir = frontend_module.resolve_path_within_footage_root(footage_root, event_path)
+        if not event_dir.is_dir():
+            return jsonify({"error": "Clip folder not found."}), 404
+
+        if not frontend_module.uncombine_event_directory(event_dir):
+            return jsonify({"error": "This clip is not a combined clip."}), 400
+
+        return jsonify({
+            "eventPath": frontend_module.get_event_relative_path(event_dir, footage_root),
+            "redirectUrl": "/",
+        })
 
     @app.post("/events/<path:event_path>/player-edits")
     def update_event_player_edits(event_path: str):

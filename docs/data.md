@@ -20,6 +20,8 @@ Fields written directly by the app today:
 - `eventCategoryLabel`: string or `null`
 - `driverAssistDisplay`: object with `label`, `percent`, and `text` when the event has `SELF_DRIVING`, `AUTOSTEER`, or `TACC` samples
 - `fsdOnPercent`: legacy compatibility field retained only when the display label is `FSD`
+- `combinedEvent.memberClipNames[]`: ordered list of sibling SavedClips event-folder names combined into this owner event
+- `combinedIntoClipName`: sibling SavedClips owner folder name when this event is hidden inside another combined event
 - `playerEdits`: saved player edit payload
 - `normalizedEditSegments`: normalized segment list derived from `playerEdits`
 - `latestRender`: metadata for the latest successful export
@@ -28,6 +30,8 @@ Implementation notes:
 
 - The SEI processing path updates autopilot and steering flags plus `eventCategoryLabel` and `driverAssistDisplay`.
 - `driverAssistDisplay` shows `FSD` only when `SELF_DRIVING` is present. If no `SELF_DRIVING` samples exist but `AUTOSTEER` or `TACC` does, it shows `AP` instead.
+- Combined Saved clips are metadata-only: the oldest selected event becomes the visible owner, later sibling events are hidden by `combinedIntoClipName`, and no clip files are copied.
+- Combined Saved clips can be reversed by clearing the owner `combinedEvent` block and each member `combinedIntoClipName`; the viewer uses that metadata-only uncombine flow and then returns to the index.
 - The player and render routes also write `playerEdits` and `normalizedEditSegments`.
 - Successful renders persist `latestRender` back into the same file.
 - Existing unknown keys are preserved when the marker is rewritten.
@@ -50,6 +54,12 @@ Current fields:
 - `thumbnail_path`
 - `location_label`
 - `trigger_offset_seconds`
+- `end_timestamp`
+
+Implementation notes:
+
+- For combined Saved clips, `clip_count`, `cameras`, and `end_timestamp` are derived from the owner event plus all member event folders listed in `combinedEvent.memberClipNames[]`.
+- The visible summary timestamp remains the owner folder timestamp, so the combined event stays anchored at the oldest selected clip in the index timeline.
 
 ## Event Clip And Playlist Payload
 
@@ -63,6 +73,7 @@ Current fields:
 - `segment_label`
 - `file_name`
 - `file_path`
+- `source_event_path`
 
 The event page serializes playlists to JSON with these fields per clip:
 
@@ -72,6 +83,13 @@ The event page serializes playlists to JSON with these fields per clip:
 - `url`
 - `hasTelemetry`
 - `telemetryUrl`
+- `hasRouteSvg`
+- `routeSvgUrl`
+
+Implementation notes:
+
+- Combined Saved clip playlists concatenate the owner and member event folders in timestamp order per camera.
+- `source_event_path` keeps telemetry and route sidecars bound to the physical folder that owns each source segment, even when the viewer is opened through the combined owner event.
 
 The event page payload also includes:
 
@@ -156,6 +174,7 @@ Current fields:
 Implementation notes:
 
 - Clip timing is cumulative per camera playlist, not based on wall-clock filename gaps.
+- Combined Saved events build one logical `mediaIndex` across the owner folder plus all metadata-linked member folders.
 - `has_coverage_gap_after` is derived from wall-clock gaps between source clips for the same camera.
 
 ## Export Job

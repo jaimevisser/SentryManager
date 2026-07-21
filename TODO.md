@@ -11,6 +11,7 @@ This file tracks remaining delivery work. Implemented behavior belongs in the RE
 
 - [ ] Surface timeline coverage gaps when one or more camera angles are missing.
 - [ ] Surface event-indexing progress or pending state in the viewer so save/export actions do not fail opaquely while background indexing is still running.
+- [ ] Add an uncombine flow for metadata-only combined Saved clips.
 
 ## Editing Model
 

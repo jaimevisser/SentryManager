@@ -17,18 +17,43 @@
                 <span class="brand-wordmark">SentryManager</span>
             </a>
             {% if page_shell_class == "index-shell" %}
+                <button class="header-selection-action header-selection-action-combine"
+                        type="button"
+                        data-index-combine-button
+                        data-combine-url="{{ url_for('combine_events') }}"
+                        aria-label="Combine selected clips"
+                        title="Combine selected clips"
+                        hidden>
+                    <img class="header-selection-action-icon"
+                         src="{{ url_for('static', filename='mdi/set-merge-orange.svg') }}"
+                         alt="">
+                </button>
                 <button class="header-selection-action"
                         type="button"
                         data-index-delete-button
                         data-delete-url="{{ url_for('delete_events') }}"
                         aria-label="Delete selected clips"
-                    title="Delete selected clips"
+                        title="Delete selected clips"
                         hidden>
                     <img class="header-selection-action-icon"
                          src="{{ url_for('static', filename='mdi/trash-can-outline-orange.svg') }}"
                          alt="">
                 </button>
             {% elif page_delete_event_path %}
+                {% if page_uncombine_event_path %}
+                    <button class="header-selection-action header-selection-action-uncombine"
+                            type="button"
+                            data-viewer-uncombine-button
+                            data-uncombine-url="{{ url_for('uncombine_event', event_path=page_uncombine_event_path) }}"
+                            data-event-path="{{ page_uncombine_event_path }}"
+                            data-uncombine-redirect-url="{{ page_uncombine_redirect_url or url_for('index') }}"
+                            aria-label="Uncombine this clip"
+                            title="Uncombine this clip">
+                        <img class="header-selection-action-icon"
+                             src="{{ url_for('static', filename='mdi/set-split-orange.svg') }}"
+                             alt="">
+                    </button>
+                {% endif %}
                 <button class="header-selection-action header-selection-action-viewer"
                         type="button"
                         data-viewer-delete-button

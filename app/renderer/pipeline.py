@@ -77,6 +77,8 @@ TELEMETRY_SHADOW = (0, 0, 0, 160)
 AUTOPILOT_ACTIVE_COLOR = (94, 169, 255, 245)
 HEADING_LABEL_COLOR = (0, 0, 0, 224)
 SVG_ICON_CACHE: dict[tuple[str, int], Image.Image | None] = {}
+COMBINED_EVENT_KEY = "combinedEvent"
+COMBINED_EVENT_MEMBERS_KEY = "memberClipNames"
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,61 @@ class RenderFragment:
     sourceClip: str
     sourceIn: float
     sourceOut: float
+
+
+def _load_processing_state(event_dir: Path) -> dict[str, object]:
+    processing_state_path = event_dir / "sentrymanager.json"
+    if not processing_state_path.is_file():
+        return {}
+
+    try:
+        payload = json.loads(processing_state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    return payload if isinstance(payload, dict) else {}
+
+
+def _get_combined_event_member_names(event_dir: Path) -> list[str]:
+    processing_state = _load_processing_state(event_dir)
+    raw_combined_event = processing_state.get(COMBINED_EVENT_KEY)
+    if not isinstance(raw_combined_event, dict):
+        return []
+
+    raw_member_names = raw_combined_event.get(COMBINED_EVENT_MEMBERS_KEY)
+    if not isinstance(raw_member_names, list):
+        return []
+
+    member_names: list[str] = []
+    seen_names: set[str] = set()
+    for raw_name in raw_member_names:
+        if not isinstance(raw_name, str):
+            continue
+        normalized_name = raw_name.strip()
+        if not normalized_name or normalized_name in seen_names:
+            continue
+        if Path(normalized_name).name != normalized_name:
+            continue
+        seen_names.add(normalized_name)
+        member_names.append(normalized_name)
+    return member_names
+
+
+def _get_event_source_directories(event_dir: Path) -> list[Path]:
+    member_names = _get_combined_event_member_names(event_dir)
+    if not member_names:
+        return [event_dir]
+
+    event_directories = [event_dir]
+    seen_directories = {event_dir.resolve()}
+    for member_name in member_names:
+        member_dir = event_dir.parent / member_name
+        resolved_member_dir = member_dir.resolve()
+        if resolved_member_dir in seen_directories or not member_dir.is_dir():
+            continue
+        seen_directories.add(resolved_member_dir)
+        event_directories.append(member_dir)
+    return event_directories
 
 
 @dataclass(frozen=True)
@@ -573,7 +630,11 @@ def _get_visible_camera_keys(layout: str, primary_camera: str) -> list[str]:
 def _build_media_index(event_dir: Path, footage_root: Path) -> list[MediaClip]:
     clip_rows: list[dict[str, object]] = []
     segment_timestamps = []
-    for clip_file in sorted(event_dir.glob("*.mp4")):
+    clip_files: list[Path] = []
+    for source_event_dir in _get_event_source_directories(event_dir):
+        clip_files.extend(source_event_dir.glob("*.mp4"))
+
+    for clip_file in sorted(clip_files, key=lambda path: path.name.lower()):
         segment_key, camera_key = _split_clip_stem(clip_file.stem)
         if camera_key not in CAMERA_ORDER:
             continue
@@ -629,7 +690,7 @@ def _build_media_index(event_dir: Path, footage_root: Path) -> list[MediaClip]:
             width=probe["width"],
             height=probe["height"],
             codec_name=probe["codec_name"],
-            has_telemetry_sidecar=(event_dir / f"{row['segment_key']}-telemetry.sei.bin").is_file(),
+            has_telemetry_sidecar=(clip_file.parent / f"{row['segment_key']}-telemetry.sei.bin").is_file(),
             has_coverage_gap_after=has_gap_after_previous,
         )
         media_index.append(media_clip)
