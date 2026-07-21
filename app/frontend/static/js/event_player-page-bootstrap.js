@@ -32,6 +32,7 @@ export function loadEventPlayerBootstrap(documentObject, normalizeDriverAssistDi
 
     const eventFlags = getObjectOrNull(playlistConfig?.eventFlags);
     const initialStartTime = getFiniteNumberOrNull(playlistConfig?.initialStartTime);
+    const initialNotes = getStringOrNull(playlistConfig?.eventNotes);
 
     return {
         player,
@@ -50,6 +51,7 @@ export function loadEventPlayerBootstrap(documentObject, normalizeDriverAssistDi
         eventTimestampIso: getStringOrNull(playlistConfig?.eventTimestampIso),
         eventRouteSvgUrl: getStringOrNull(playlistConfig?.eventRouteSvgUrl),
         initialStartTime: initialStartTime === null ? 0 : Math.max(0, initialStartTime),
+        initialNotes: initialNotes || "",
     };
 }
 
@@ -82,6 +84,7 @@ export function queryEventPlayerNodes(documentObject) {
         renderActionIcon: documentObject.querySelector("[data-player-render-action-icon]"),
         downloadActionButton: documentObject.querySelector("[data-player-download-action]"),
         renderStatusNode: documentObject.querySelector("[data-player-render-status]"),
+        notesInput: documentObject.querySelector("[data-player-notes-input]"),
         toggleButton: documentObject.querySelector("[data-player-toggle]"),
         toggleIcon: documentObject.querySelector("[data-player-toggle-icon]"),
         playFromStartButton: documentObject.querySelector("[data-player-play-from-start]"),

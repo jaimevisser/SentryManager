@@ -574,6 +574,44 @@
     display: none;
 }
 
+.player-notes-panel {
+    display: grid;
+    gap: 0.35rem;
+    padding-top: 0.32rem;
+}
+
+.player-notes-label {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.player-notes-input {
+    width: 100%;
+    min-height: 6.25rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 0.8rem;
+    background: rgba(9, 14, 22, 0.9);
+    color: var(--text);
+    font: inherit;
+    line-height: 1.45;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.player-notes-input::placeholder {
+    color: rgba(238, 245, 247, 0.34);
+}
+
+.player-notes-input:focus-visible {
+    outline: 1px solid rgba(255, 255, 255, 0.72);
+    outline-offset: 0.12rem;
+}
+
 .player-scrub-track {
     position: relative;
     display: flex;

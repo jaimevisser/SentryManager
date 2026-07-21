@@ -374,9 +374,18 @@
                               {% if not latest_render and not active_render_job %}hidden{% endif %}>{% if latest_render %}Ready{% elif active_render_job %}{{ active_render_job.progressMessage or 'Queued...' }}{% else %}{% endif %}</span>
                         </div>
                     </div>
+                    <div class="player-notes-panel">
+                        <label class="player-notes-label" for="player-notes-input">Notes</label>
+                        <textarea class="player-notes-input"
+                                  id="player-notes-input"
+                                  data-player-notes-input
+                                  rows="4"
+                                  spellcheck="true"
+                                  aria-label="Clip notes">{{ event_notes }}</textarea>
+                    </div>
                 </div>
             </div>
-            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventTimestampIso': event_timestamp_iso, 'eventRouteSvgUrl': event_route_svg_url, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data, 'driverAssistDisplay': event_driver_assist_display}, 'savedEdits': saved_player_edits, 'normalizedEditSegments': normalized_edit_segments, 'playerEditsSaveUrl': player_edits_save_url, 'playerRenderUrl': player_render_url, 'playerDownloadUrl': player_download_url, 'activeRenderJob': active_render_job, 'latestRender': latest_render}|tojson }}</script>
+            <script id="event-playlist" type="application/json">{{ {'defaultViewKey': default_view_key, 'playlists': playlist_payload, 'eventMarkerTime': event_marker_time, 'initialStartTime': initial_start_time, 'eventTimestampIso': event_timestamp_iso, 'eventRouteSvgUrl': event_route_svg_url, 'eventFlags': {'hasAutopilotActivity': event_has_autopilot_activity, 'hasSteeringAngleData': event_has_steering_angle_data, 'driverAssistDisplay': event_driver_assist_display}, 'savedEdits': saved_player_edits, 'eventNotes': event_notes, 'normalizedEditSegments': normalized_edit_segments, 'playerEditsSaveUrl': player_edits_save_url, 'playerRenderUrl': player_render_url, 'playerDownloadUrl': player_download_url, 'activeRenderJob': active_render_job, 'latestRender': latest_render}|tojson }}</script>
         {% else %}
             <div class="player-empty-state">No camera clips were found for this event yet.</div>
         {% endif %}

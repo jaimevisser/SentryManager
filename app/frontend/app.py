@@ -58,6 +58,7 @@ DEFAULT_SENTRY_PLAYER_PREROLL_SECONDS = 20.0
 COMBINED_EVENT_KEY = "combinedEvent"
 COMBINED_EVENT_MEMBERS_KEY = "memberClipNames"
 COMBINED_INTO_KEY = "combinedIntoClipName"
+EVENT_NOTES_FILE_NAME = "notes.txt"
 COMBINE_SEGMENT_SECONDS = 60.0
 COMBINE_MARGIN_SECONDS = 1.0
 
@@ -245,6 +246,47 @@ def get_combined_owner_name(processing_state: dict[str, object]) -> str | None:
     if not normalized_owner_name or Path(normalized_owner_name).name != normalized_owner_name:
         return None
     return normalized_owner_name
+
+
+def get_combined_owner_directory(event_dir: Path) -> Path | None:
+    owner_name = get_combined_owner_name(load_event_processing_state(event_dir))
+    if owner_name is None:
+        return None
+
+    owner_dir = event_dir.parent / owner_name
+    if not owner_dir.is_dir():
+        return None
+    return owner_dir
+
+
+def get_event_storage_directory(event_dir: Path) -> Path:
+    combined_owner_dir = get_combined_owner_directory(event_dir)
+    return combined_owner_dir if combined_owner_dir is not None else event_dir
+
+
+def get_event_notes_path(event_dir: Path) -> Path:
+    return get_event_storage_directory(event_dir) / EVENT_NOTES_FILE_NAME
+
+
+def read_event_notes(event_dir: Path) -> str:
+    notes_file = get_event_notes_path(event_dir)
+    if not notes_file.is_file():
+        return ""
+
+    try:
+        return notes_file.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def write_event_notes(event_dir: Path, notes: str) -> None:
+    notes_file = get_event_notes_path(event_dir)
+    if notes == "":
+        if notes_file.exists():
+            notes_file.unlink()
+        return
+
+    notes_file.write_text(notes, encoding="utf-8")
 
 
 def get_combined_event_directories(event_dir: Path) -> list[Path]:
@@ -479,6 +521,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     combined_processing_states = [load_event_processing_state(member_dir) for member_dir in get_combined_event_directories(event_dir)]
     event_driver_assist_display = None if has_combined_members else get_event_driver_assist_display(event_processing_state)
     saved_player_edits = get_saved_player_edits(event_processing_state)
+    event_notes = read_event_notes(event_dir)
     normalized_edit_segments = get_normalized_edit_segments(event_summary.path, saved_player_edits)
     persist_normalized_edit_segments(event_dir, event_processing_state, normalized_edit_segments)
     latest_render = get_latest_render_metadata(event_dir)
@@ -501,6 +544,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
         "event_marker_time": event_summary.trigger_offset_seconds if event_summary.category == "SentryClips" else None,
         "initial_start_time": get_initial_player_start_time(event_summary, saved_player_edits),
         "saved_player_edits": saved_player_edits,
+        "event_notes": event_notes,
         "normalized_edit_segments": normalized_edit_segments,
         "player_edits_save_url": url_for("update_event_player_edits", event_path=event_summary.path),
         "player_render_url": url_for("render_event_export", event_path=event_summary.path),
@@ -979,6 +1023,13 @@ def normalize_saved_player_edits(payload: object) -> dict[str, object] | None:
         "startMarkerView": start_marker_view,
         "cameraMarkers": camera_markers,
     }
+
+
+def normalize_event_notes(raw_notes: object) -> str | None:
+    if not isinstance(raw_notes, str):
+        return None
+
+    return raw_notes.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def get_saved_player_edits(event_processing_state: dict[str, object]) -> dict[str, object] | None:

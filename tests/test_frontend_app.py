@@ -70,6 +70,79 @@ class FrontendAppTests(unittest.TestCase):
         queue_mock.assert_called_once_with(event_dir)
         self.assertFalse((event_dir / "sentrymanager.json").exists())
 
+    def test_player_edits_route_persists_multiline_notes_to_notes_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            event_dir.mkdir(parents=True)
+            (event_dir / "2026-03-31_06-42-49-front.mp4").write_bytes(b"")
+            (event_dir / "sentrymanager.json").write_text("{}", encoding="utf-8")
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                response = app.test_client().post(
+                    "/events/SavedClips/2026-03-31_06-53-21/player-edits",
+                    json={
+                        "trimStartTime": 0,
+                        "trimEndTime": 1,
+                        "exportFormat": "hd",
+                        "startMarkerView": {"layout": "single", "cameraKey": "front"},
+                        "cameraMarkers": [],
+                        "notes": "First line\nSecond line",
+                    },
+                )
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+            saved_state = json.loads((event_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+            saved_notes = (event_dir / "notes.txt").read_text(encoding="utf-8")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("First line\nSecond line", saved_notes)
+        self.assertNotIn("notes", saved_state.get("playerEdits", {}))
+
+    def test_player_edits_route_uses_combined_owner_folder_for_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "sentrymanager.json").write_text("{}", encoding="utf-8")
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedIntoClipName": owner_dir.name}),
+                encoding="utf-8",
+            )
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                response = app.test_client().post(
+                    "/events/SavedClips/2026-03-31_06-54-21/player-edits",
+                    json={
+                        "trimStartTime": 0,
+                        "trimEndTime": 1,
+                        "exportFormat": "hd",
+                        "startMarkerView": {"layout": "single", "cameraKey": "front"},
+                        "cameraMarkers": [],
+                        "notes": "Combined clip note",
+                    },
+                )
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+            saved_owner_notes = (owner_dir / "notes.txt").read_text(encoding="utf-8")
+            child_notes_exists = (child_dir / "notes.txt").exists()
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("Combined clip note", saved_owner_notes)
+        self.assertFalse(child_notes_exists)
+
     def test_load_event_trigger_camera_key_uses_swapped_sentry_side_pairs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             event_dir = Path(temp_dir) / "SentryClips" / "2026-03-27_10-42-07"

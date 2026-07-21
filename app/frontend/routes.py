@@ -181,15 +181,25 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
             return jsonify({"error": "Clip indexing is still in progress."}), 409
 
         payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Invalid player edits request."}), 400
+
         player_edits = frontend_module.normalize_saved_player_edits(payload)
         if player_edits is None:
             return jsonify({"error": "Invalid player edits request."}), 400
+
+        notes = frontend_module.read_event_notes(event_dir)
+        if "notes" in payload:
+            notes = frontend_module.normalize_event_notes(payload.get("notes"))
+            if notes is None:
+                return jsonify({"error": "Invalid notes request."}), 400
 
         processing_state = frontend_module.load_event_processing_state(event_dir)
         processing_state["playerEdits"] = player_edits
         processing_state["normalizedEditSegments"] = frontend_module.get_normalized_edit_segments(event_path, player_edits)
         try:
             frontend_module.write_event_processing_state(event_dir, processing_state)
+            frontend_module.write_event_notes(event_dir, notes)
         except OSError:
             return jsonify({"error": "Could not save player edits."}), 500
 

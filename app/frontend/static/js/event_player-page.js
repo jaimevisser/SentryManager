@@ -40,6 +40,7 @@ export function initEventPlayer() {
         eventRouteSvgUrl,
         eventTimestampIso,
         initialRenderJob,
+        initialNotes,
         initialStartTime,
         latestRenderMetadata,
         player,
@@ -80,6 +81,7 @@ export function initEventPlayer() {
         headingLabelNode,
         headingNode,
         layoutButtons,
+        notesInput,
         renderActionButton,
         renderActionIcon,
         renderStatusNode,
@@ -107,6 +109,7 @@ export function initEventPlayer() {
     let lastPointerCommitAt = 0;
     let initialSeekApplied = false;
     let savedPlayerEditsHydrated = false;
+    let clipNotes = initialNotes;
     let editingController;
     let exportController;
     let playbackController;
@@ -175,7 +178,10 @@ export function initEventPlayer() {
 
     function buildPlayerEditsPayload() {
         return editingController
-            ? editingController.buildPlayerEditsPayload(exportController?.getActiveExportFormat() || "4k")
+            ? {
+                ...editingController.buildPlayerEditsPayload(exportController?.getActiveExportFormat() || "4k"),
+                notes: clipNotes,
+            }
             : {
                 trimStartTime: 0,
                 trimEndTime: 0,
@@ -185,6 +191,7 @@ export function initEventPlayer() {
                     cameraKey: activeCameraKey,
                 },
                 cameraMarkers: [],
+                notes: clipNotes,
             };
     }
 
@@ -210,6 +217,25 @@ export function initEventPlayer() {
     function hydrateSavedPlayerEdits(rawSavedPlayerEdits) {
         exportController?.hydrateSavedExportFormat(rawSavedPlayerEdits);
         editingController?.hydrateSavedPlayerEdits(rawSavedPlayerEdits);
+    }
+
+    function handleNotesInput() {
+        if (!notesInput) {
+            return;
+        }
+
+        const nextNotes = notesInput.value;
+        if (nextNotes === clipNotes) {
+            return;
+        }
+
+        clipNotes = nextNotes;
+        schedulePlayerEditsPersistence();
+    }
+
+    if (notesInput) {
+        notesInput.value = clipNotes;
+        notesInput.addEventListener("input", handleNotesInput);
     }
 
     const { scheduleStageSafeZoneUpdate } = createStageSafeZoneController({

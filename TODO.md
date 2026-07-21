@@ -17,7 +17,7 @@ This file tracks remaining delivery work. Implemented behavior belongs in the RE
 
 - [ ] Show derived segment boundaries and active-segment selection on the event timeline.
 - [ ] Let users split, merge, and retime segments without rebuilding raw marker state by hand.
-- [ ] Add per-segment editing controls for labels, notes, and optional playback-rate overrides.
+- [ ] Add per-segment editing controls for labels and optional playback-rate overrides.
 
 ## Export Pipeline
 
