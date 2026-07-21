@@ -1,5 +1,7 @@
 import { createEventPlayerMarkerUiController } from "./event_player-page-marker-ui.js";
 
+const MARKER_TIME_EPSILON = 0.0005;
+
 export function createEventPlayerEditingController({
     documentObject,
     player,
@@ -240,7 +242,7 @@ export function createEventPlayerEditingController({
         }
         playbackMarkers.push(...cameraMarkers.map((marker) => normalizeCameraMarker({ ...marker })));
         playbackMarkers.sort((leftMarker, rightMarker) => {
-            if (Math.abs(leftMarker.time - rightMarker.time) < 0.01) {
+            if (Math.abs(leftMarker.time - rightMarker.time) < MARKER_TIME_EPSILON) {
                 if (leftMarker.id === "start") {
                     return -1;
                 }
@@ -257,7 +259,7 @@ export function createEventPlayerEditingController({
         const playbackMarkers = getPlaybackViewMarkers();
         for (let index = playbackMarkers.length - 1; index >= 0; index -= 1) {
             const marker = playbackMarkers[index];
-            if (marker.time <= eventTime + 0.01) {
+            if (marker.time <= eventTime + MARKER_TIME_EPSILON) {
                 return marker;
             }
         }
@@ -276,10 +278,10 @@ export function createEventPlayerEditingController({
         const playbackMarkers = getPlaybackViewMarkers();
         for (let index = playbackMarkers.length - 1; index >= 0; index -= 1) {
             const marker = playbackMarkers[index];
-            if (marker.time > nextEventTime + 0.01) {
+            if (marker.time > nextEventTime + MARKER_TIME_EPSILON) {
                 continue;
             }
-            if (marker.time <= previousEventTime + 0.01) {
+            if (marker.time <= previousEventTime + MARKER_TIME_EPSILON) {
                 break;
             }
             return marker;

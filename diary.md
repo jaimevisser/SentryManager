@@ -139,3 +139,9 @@ Add new stuff at the bottom. Keep sections per date. Add times to entries.
 - 15:19 Added new playback action control next to Play in `app/frontend/templates/event_player.html` using a new local MDI asset `app/frontend/static/mdi/movie-open-outline.svg`; button tooltip/label is "Play from start marker".
 - 15:19 Wired the button through bootstrap/page/editing controllers so click behavior applies `startMarkerView` (layout + camera selection) and starts playback at trim start; validation: `node --check app/frontend/static/js/event_player-page.js`, `node --check app/frontend/static/js/event_player-page-editing.js`, `node --check app/frontend/static/js/event_player-page-bootstrap.js`, and `docker compose up -d --build app`.
 - 15:35 Matched the new `movie-open-outline` control icon to Play/Pause color by setting `fill="#ffffff"` in `app/frontend/static/mdi/movie-open-outline.svg` (plus `aria-hidden="true"` to align with other local icon assets).
+
+### 2026-07-21
+- 16:43 Investigated browser/export marker drift for camera switches and found the player was treating markers as active up to 10ms early in `app/frontend/static/js/event_player-page-editing.js`, while export cuts use the exact saved millisecond timestamp.
+- 16:43 Reduced playback marker tolerance to a sub-millisecond rounding epsilon so browser view changes line up with export segment boundaries instead of firing early.
+- 16:43 Added a Playwright regression in `tests/view_selection.spec.js` that sets a front start marker plus a later back-camera marker at `10.005s`, then proves scrubbing to `10.000s` stays on front and scrubbing to `10.005s` switches to back.
+- 16:43 Validation: `node --check app/frontend/static/js/event_player-page-editing.js`, `npx playwright test tests/view_selection.spec.js --reporter=line --grep 'camera marker does not switch early before its saved time'`, and editor diagnostics on the touched JS/spec files.
