@@ -6,6 +6,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const APP_URL = 'http://127.0.0.1:8765';
 const EVENT_PATH = 'SentryClips/2026-03-27_14-37-34';
 const SEGMENT_KEY = '2026-03-27_14-26-59';
+const COMBINED_EVENT_PATH = 'SavedClips/2026-07-21_15-44-02';
 
 test.use({
   browserName: 'chromium',
@@ -48,6 +49,16 @@ test('trim markers can be exactly five seconds apart on long events', async ({ p
 
   await page.locator('[data-player-set-end]').click();
   await expect(page.locator('[data-player-end-marker]')).toHaveAttribute('title', 'End marker at 0:15');
+});
+
+test('combined clip total duration reflects all segment durations', async ({ page }) => {
+  await page.goto(`${APP_URL}/events/${COMBINED_EVENT_PATH}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => {
+    const totalTimeNode = document.querySelector('[data-player-total-time]');
+    return totalTimeNode && totalTimeNode.textContent === '1:42';
+  }, null, { timeout: 15000 });
+
+  await expect(page.locator('[data-player-total-time]')).toHaveText('1:42');
 });
 
 function runCommand(command, args, options = {}) {

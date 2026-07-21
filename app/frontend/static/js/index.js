@@ -49,7 +49,7 @@ function initIndexSelection() {
                 return false;
             }
 
-            const startMs = getCardTimestampMs(card, "eventTimestamp");
+            const startMs = getCardTimestampMs(card, "eventStartTimestamp") ?? getCardTimestampMs(card, "eventTimestamp");
             const endMs = getCardTimestampMs(card, "eventEndTimestamp");
             if (startMs === null || endMs === null) {
                 return false;

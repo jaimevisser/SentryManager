@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import queue
 import shutil
+import subprocess
 import sys
 import threading
 
@@ -81,6 +82,7 @@ class EventSummary:
     clip_count: int
     cameras: list[str]
     timestamp: datetime | None
+    start_timestamp: datetime | None
     day_label: str
     time_label: str
     thumbnail_path: str | None
@@ -112,6 +114,7 @@ _EVENT_SUMMARY_CACHE: dict[
     tuple[str, tuple[tuple[str, int, int, int], ...]],
     list[EventSummary],
 ] = {}
+_EVENT_CLIP_DURATION_CACHE: dict[tuple[str, int], float] = {}
 _EVENT_INDEXING_QUEUE: queue.Queue[Path] = queue.Queue()
 _EVENT_INDEXING_PENDING: set[Path] = set()
 _EVENT_INDEXING_LOCK = threading.Lock()
@@ -322,6 +325,21 @@ def infer_event_time_window_from_clip_files(clip_files: list[Path]) -> tuple[dat
     valid_segment_timestamps = [timestamp for timestamp in segment_timestamps if timestamp is not None]
     if not valid_segment_timestamps:
         return None
+
+    clip_windows: list[tuple[datetime, datetime]] = []
+    for clip_file in clip_files:
+        segment_timestamp = infer_event_timestamp(split_clip_stem(clip_file.stem)[0])
+        if segment_timestamp is None:
+            continue
+        duration_seconds = get_clip_duration_seconds(clip_file)
+        if duration_seconds is None:
+            continue
+        clip_windows.append((segment_timestamp, segment_timestamp + timedelta(seconds=duration_seconds)))
+
+    if clip_windows:
+        window_start = min(window[0] for window in clip_windows)
+        window_end = max(window[1] for window in clip_windows)
+        return window_start, window_end
 
     window_start = valid_segment_timestamps[0]
     window_end = valid_segment_timestamps[-1] + timedelta(seconds=COMBINE_SEGMENT_SECONDS)
@@ -688,6 +706,7 @@ def summarize_event_dir(
         clip_count=len(clip_files),
         cameras=cameras,
         timestamp=timestamp,
+        start_timestamp=first_segment_timestamp,
         day_label=format_day_label(timestamp),
         time_label=format_time_label(timestamp),
         thumbnail_path=str(relative_path) if thumbnail_file.is_file() else None,
@@ -723,6 +742,39 @@ def infer_event_timestamp(name: str) -> datetime | None:
         return datetime.strptime(name, "%Y-%m-%d_%H-%M-%S")
     except ValueError:
         return None
+
+
+def get_clip_duration_seconds(clip_file: Path) -> float | None:
+    cache_key = (str(clip_file.resolve()), get_path_mtime_ns(clip_file))
+    cached_duration = _EVENT_CLIP_DURATION_CACHE.get(cache_key)
+    if cached_duration is not None:
+        return cached_duration
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(clip_file),
+            ],
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        duration_seconds = float(result.stdout.strip())
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        return None
+
+    if not math.isfinite(duration_seconds) or duration_seconds <= 0:
+        return None
+
+    _EVENT_CLIP_DURATION_CACHE[cache_key] = duration_seconds
+    return duration_seconds
 
 
 def format_day_label(timestamp: datetime | None) -> str:

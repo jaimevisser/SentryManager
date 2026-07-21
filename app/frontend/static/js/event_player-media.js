@@ -74,21 +74,27 @@ export async function populateClipDurations(playlist, player, durationCache, onD
     }
 
     const activeUrl = playlist[0].url;
-    const standardDuration = activeUrl ? await getStandardDuration(player, activeUrl, durationCache) : 0;
+    const durationLoads = playlist.map((clip, index) => {
+        const durationPromise = index === 0 && activeUrl
+            ? getStandardDuration(player, activeUrl, durationCache)
+            : loadClipDuration(clip.url, durationCache);
 
-    playlist.forEach((clip) => {
-        clip.duration = standardDuration;
+        return durationPromise
+            .then((duration) => {
+                clip.duration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+                if (typeof onDurationUpdate === "function") {
+                    onDurationUpdate();
+                }
+            })
+            .catch(() => {
+                clip.duration = 0;
+                if (typeof onDurationUpdate === "function") {
+                    onDurationUpdate();
+                }
+            });
     });
 
-    if (playlist.length > 1) {
-        const lastIndex = playlist.length - 1;
-        loadClipDuration(playlist[lastIndex].url, durationCache).then((lastDuration) => {
-            playlist[lastIndex].duration = lastDuration || standardDuration;
-            if (typeof onDurationUpdate === "function") {
-                onDurationUpdate();
-            }
-        });
-    }
+    await Promise.all(durationLoads);
 
     return playlist;
 }
