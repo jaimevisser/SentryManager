@@ -319,15 +319,16 @@ class FrontendAppTests(unittest.TestCase):
             previous_root = app.config["TESLACAM_ROOT"]
             app.config["TESLACAM_ROOT"] = str(footage_root)
             try:
-                response = app.test_client().post(
-                    "/events/combine",
-                    json={
-                        "eventPaths": [
-                            "SavedClips/2026-03-31_06-54-21",
-                            "SavedClips/2026-03-31_06-53-21",
-                        ],
-                    },
-                )
+                with mock.patch.object(frontend_app_module, "rebuild_event_route_svg_from_event_dirs", return_value=True) as rebuild_mock:
+                    response = app.test_client().post(
+                        "/events/combine",
+                        json={
+                            "eventPaths": [
+                                "SavedClips/2026-03-31_06-54-21",
+                                "SavedClips/2026-03-31_06-53-21",
+                            ],
+                        },
+                    )
             finally:
                 app.config["TESLACAM_ROOT"] = previous_root
 
@@ -337,8 +338,48 @@ class FrontendAppTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertEqual(["2026-03-31_06-54-21"], owner_state["combinedEvent"]["memberClipNames"])
+        self.assertEqual(1, owner_state["combinedEvent"]["routeSvgVersion"])
         self.assertEqual("2026-03-31_06-53-21", child_state["combinedIntoClipName"])
         self.assertEqual([owner_dir], visible_directories)
+        rebuild_mock.assert_called_once_with(owner_dir, [owner_dir, child_dir])
+
+    def test_combined_owner_event_page_includes_combined_route_svg_url(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "route-combined.svg").write_text("<svg></svg>", encoding="utf-8")
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedEvent": {"memberClipNames": [child_dir.name]}}),
+                encoding="utf-8",
+            )
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedIntoClipName": owner_dir.name}),
+                encoding="utf-8",
+            )
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                with mock.patch.object(frontend_app_module, "queue_event_processing"):
+                    with mock.patch.object(frontend_app_module, "rebuild_event_route_svg_from_event_dirs", return_value=True) as rebuild_mock:
+                        response = app.test_client().get("/events/SavedClips/2026-03-31_06-53-21")
+                owner_state = json.loads((owner_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn(
+            "/event-route-svg-combined/SavedClips/2026-03-31_06-53-21",
+            response.get_data(as_text=True),
+        )
+        self.assertEqual(1, owner_state["combinedEvent"]["routeSvgVersion"])
+        rebuild_mock.assert_called_once_with(owner_dir, [owner_dir, child_dir])
 
     def test_uncombine_event_directory_clears_combined_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -358,7 +399,8 @@ class FrontendAppTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = frontend_app_module.uncombine_event_directory(owner_dir)
+            with mock.patch.object(frontend_app_module, "rebuild_event_route_svg_from_event_dirs", return_value=True) as rebuild_mock:
+                result = frontend_app_module.uncombine_event_directory(owner_dir)
 
             owner_state = json.loads((owner_dir / "sentrymanager.json").read_text(encoding="utf-8"))
             child_state = json.loads((child_dir / "sentrymanager.json").read_text(encoding="utf-8"))
@@ -368,6 +410,7 @@ class FrontendAppTests(unittest.TestCase):
         self.assertNotIn("combinedEvent", owner_state)
         self.assertNotIn("combinedIntoClipName", child_state)
         self.assertEqual([owner_dir, child_dir], visible_directories)
+        rebuild_mock.assert_called_once_with(owner_dir, [owner_dir])
 
     def test_uncombine_event_route_clears_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -391,7 +434,8 @@ class FrontendAppTests(unittest.TestCase):
             previous_root = app.config["TESLACAM_ROOT"]
             app.config["TESLACAM_ROOT"] = str(footage_root)
             try:
-                response = app.test_client().post("/events/SavedClips/2026-03-31_06-53-21/uncombine")
+                with mock.patch.object(frontend_app_module, "rebuild_event_route_svg_from_event_dirs", return_value=True) as rebuild_mock:
+                    response = app.test_client().post("/events/SavedClips/2026-03-31_06-53-21/uncombine")
             finally:
                 app.config["TESLACAM_ROOT"] = previous_root
 
@@ -401,6 +445,7 @@ class FrontendAppTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertNotIn("combinedEvent", owner_state)
         self.assertNotIn("combinedIntoClipName", child_state)
+        rebuild_mock.assert_called_once_with(owner_dir, [owner_dir])
 
 
 if __name__ == "__main__":

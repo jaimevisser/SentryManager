@@ -124,6 +124,47 @@ def get_event_route_svg_path(event_dir: Path) -> Path:
     return event_dir / EVENT_ROUTE_SVG_NAME
 
 
+def rebuild_event_route_svg_from_event_dirs(target_event_dir: Path, source_event_dirs: list[Path]) -> bool:
+    segment_source_clips: dict[str, Path] = {}
+    for source_event_dir in source_event_dirs:
+        segment_camera_files: dict[str, dict[str, Path]] = {}
+        for clip_file in sorted(source_event_dir.glob("*.mp4"), key=lambda path: path.name.lower()):
+            segment_key, camera_key = split_clip_stem(clip_file.stem)
+            if camera_key == "unknown":
+                continue
+            segment_camera_files.setdefault(segment_key, {})[camera_key] = clip_file
+
+        for segment_key, camera_files in segment_camera_files.items():
+            source_clip = camera_files.get(PRIMARY_CAMERA_KEY)
+            if source_clip is None:
+                source_clip = next(iter(camera_files.values()), None)
+            if source_clip is None:
+                continue
+            segment_source_clips[segment_key] = source_clip
+
+    flattened_points: list[tuple[float, float]] = []
+    for segment_key in sorted(segment_source_clips):
+        source_clip = segment_source_clips[segment_key]
+        try:
+            (_, _, _, _, _, _, _, route_points) = build_sei_sidecar_payload(source_clip)
+        except (OSError, ValueError, struct.error):
+            continue
+        for point in route_points:
+            if flattened_points and flattened_points[-1] == point:
+                continue
+            flattened_points.append(point)
+
+    event_route_svg_path = get_event_route_svg_path(target_event_dir)
+    route_svg = build_route_svg_from_gps_points(flattened_points)
+    if route_svg:
+        write_text_if_changed(event_route_svg_path, route_svg)
+        return True
+
+    if event_route_svg_path.exists():
+        event_route_svg_path.unlink()
+    return False
+
+
 def event_needs_route_backfill(event_dir: Path) -> bool:
     sidecars = list(event_dir.glob(f"*{SEI_SIDECAR_SUFFIX}"))
     if not sidecars:

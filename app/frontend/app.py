@@ -24,6 +24,7 @@ from ..renderer import (
     start_render_worker_thread,
 )
 from ..sei import (
+    rebuild_event_route_svg_from_event_dirs,
     ensure_sei_sidecars,
     event_needs_route_backfill,
     get_event_route_svg_path,
@@ -58,6 +59,8 @@ EXPORT_FORMAT_OPTIONS = {"4k", "hd"}
 DEFAULT_SENTRY_PLAYER_PREROLL_SECONDS = 20.0
 COMBINED_EVENT_KEY = "combinedEvent"
 COMBINED_EVENT_MEMBERS_KEY = "memberClipNames"
+COMBINED_EVENT_ROUTE_SVG_VERSION_KEY = "routeSvgVersion"
+COMBINED_EVENT_ROUTE_SVG_VERSION = 1
 COMBINED_INTO_KEY = "combinedIntoClipName"
 EVENT_NOTES_FILE_NAME = "notes.txt"
 COMBINE_SEGMENT_SECONDS = 60.0
@@ -238,6 +241,32 @@ def get_combined_event_member_names(processing_state: dict[str, object]) -> list
 
 def has_combined_event_members(processing_state: dict[str, object]) -> bool:
     return len(get_combined_event_member_names(processing_state)) > 0
+
+
+def get_combined_event_route_svg_version(processing_state: dict[str, object]) -> int | None:
+    combined_payload = processing_state.get(COMBINED_EVENT_KEY)
+    if not isinstance(combined_payload, dict):
+        return None
+
+    raw_version = combined_payload.get(COMBINED_EVENT_ROUTE_SVG_VERSION_KEY)
+    if isinstance(raw_version, int) and not isinstance(raw_version, bool):
+        return raw_version
+    return None
+
+
+def maybe_backfill_combined_event_route_svg(event_dir: Path, event_processing_state: dict[str, object]) -> None:
+    if not has_combined_event_members(event_processing_state):
+        return
+
+    route_svg_path = get_event_route_svg_path(event_dir)
+    if route_svg_path.is_file() and get_combined_event_route_svg_version(event_processing_state) == COMBINED_EVENT_ROUTE_SVG_VERSION:
+        return
+
+    if rebuild_event_route_svg_from_event_dirs(event_dir, get_combined_event_directories(event_dir)):
+        combined_payload = event_processing_state.get(COMBINED_EVENT_KEY)
+        if isinstance(combined_payload, dict):
+            combined_payload[COMBINED_EVENT_ROUTE_SVG_VERSION_KEY] = COMBINED_EVENT_ROUTE_SVG_VERSION
+            write_event_processing_state(event_dir, event_processing_state)
 
 
 def get_combined_owner_name(processing_state: dict[str, object]) -> str | None:
@@ -426,11 +455,6 @@ def combine_event_directories(
     owner_processing_state.pop("playerEdits", None)
     owner_processing_state.pop("normalizedEditSegments", None)
     owner_processing_state.pop("latestRender", None)
-    try:
-        get_event_route_svg_path(owner_dir).unlink(missing_ok=True)
-    except OSError:
-        pass
-    write_event_processing_state(owner_dir, owner_processing_state)
 
     for event_dir in ordered_directories:
         if event_dir == owner_dir:
@@ -442,6 +466,12 @@ def combine_event_directories(
         processing_state.pop("normalizedEditSegments", None)
         processing_state.pop("latestRender", None)
         write_event_processing_state(event_dir, processing_state)
+
+    if rebuild_event_route_svg_from_event_dirs(owner_dir, ordered_directories):
+        combined_payload = owner_processing_state.get(COMBINED_EVENT_KEY)
+        if isinstance(combined_payload, dict):
+            combined_payload[COMBINED_EVENT_ROUTE_SVG_VERSION_KEY] = COMBINED_EVENT_ROUTE_SVG_VERSION
+    write_event_processing_state(owner_dir, owner_processing_state)
 
     clear_event_summary_cache()
     return owner_dir, ordered_directories
@@ -458,6 +488,7 @@ def uncombine_event_directory(event_dir: Path) -> bool:
     owner_processing_state.pop("normalizedEditSegments", None)
     owner_processing_state.pop("latestRender", None)
     write_event_processing_state(event_dir, owner_processing_state)
+    rebuild_event_route_svg_from_event_dirs(event_dir, [event_dir])
 
     for member_name in member_names:
         member_dir = event_dir.parent / member_name
@@ -536,6 +567,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     default_view_key = get_default_player_view_key(event_summary, event_dir, camera_playlists)
     event_processing_state = load_event_processing_state(event_dir)
     has_combined_members = has_combined_event_members(event_processing_state)
+    maybe_backfill_combined_event_route_svg(event_dir, event_processing_state)
     combined_processing_states = [load_event_processing_state(member_dir) for member_dir in get_combined_event_directories(event_dir)]
     event_driver_assist_display = None if has_combined_members else get_event_driver_assist_display(event_processing_state)
     saved_player_edits = get_saved_player_edits(event_processing_state)
@@ -548,7 +580,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     overlay_time_label = event_summary.timestamp.strftime("%H:%M") if event_summary.timestamp else None
     event_timestamp_iso = event_summary.timestamp.isoformat() if event_summary.timestamp else None
     event_route_svg_url = None
-    if not has_combined_members and get_event_route_svg_path(event_dir).is_file():
+    if get_event_route_svg_path(event_dir).is_file():
         event_route_svg_url = url_for("event_route_svg_combined", event_path=event_summary.path)
 
     return {
