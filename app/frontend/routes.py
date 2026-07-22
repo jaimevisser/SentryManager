@@ -83,7 +83,10 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
     def event_player(event_path: str):
         footage_root = frontend_module.get_footage_root(app)
         event_dir = frontend_module.require_event_dir(footage_root, event_path)
-        frontend_module.queue_event_processing(event_dir)
+        if frontend_module.is_event_indexed(event_dir):
+            frontend_module.refresh_event_processing_state(event_dir)
+        else:
+            frontend_module.queue_event_processing(event_dir)
         template_context = frontend_module.build_event_player_template_context(event_dir, footage_root)
         if template_context is None:
             abort(404)
@@ -236,6 +239,10 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
             frontend_module.queue_event_processing(event_dir)
             return jsonify({"error": "Clip indexing is still in progress."}), 409
 
+        if not frontend_module.refresh_event_processing_state(event_dir):
+            frontend_module.queue_event_processing(event_dir)
+            return jsonify({"error": "Clip indexing is still in progress."}), 409
+
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return jsonify({"error": "Invalid player edits request."}), 400
@@ -272,6 +279,10 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
             return jsonify({"error": "Clip folder not found."}), 404
 
         if not frontend_module.is_event_indexed(event_dir):
+            frontend_module.queue_event_processing(event_dir)
+            return jsonify({"error": "Clip indexing is still in progress."}), 409
+
+        if not frontend_module.refresh_event_processing_state(event_dir):
             frontend_module.queue_event_processing(event_dir)
             return jsonify({"error": "Clip indexing is still in progress."}), 409
 

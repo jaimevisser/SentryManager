@@ -175,6 +175,148 @@ class FrontendAppTests(unittest.TestCase):
         self.assertEqual("Combined clip note", saved_owner_notes)
         self.assertFalse(child_notes_exists)
 
+    def test_event_player_refreshes_stale_combined_processing_before_render(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "combinedEvent": {"memberClipNames": [child_dir.name]},
+                        "driverAssistDisplay": {"label": "FSD", "percent": 100.0, "text": "FSD 100%"},
+                        "fsdOnPercent": 100.0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedIntoClipName": owner_dir.name}),
+                encoding="utf-8",
+            )
+
+            def rewrite_processing_state(_: list[Path]) -> None:
+                (owner_dir / "sentrymanager.json").write_text(
+                    json.dumps(
+                        {
+                            "combinedEvent": {"memberClipNames": [child_dir.name]},
+                            "autopilotObservedDurationMs": 4000,
+                            "autopilotActiveDurationMs": 1000,
+                            "selfDrivingDurationMs": 1000,
+                            "driverAssistDisplay": {"label": "FSD", "percent": 25.0, "text": "FSD 25%"},
+                            "fsdOnPercent": 25.0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (child_dir / "sentrymanager.json").write_text(
+                    json.dumps(
+                        {
+                            "combinedIntoClipName": owner_dir.name,
+                            "autopilotObservedDurationMs": 0,
+                            "autopilotActiveDurationMs": 0,
+                            "selfDrivingDurationMs": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                with mock.patch.object(frontend_app_module, "ensure_sei_sidecars", side_effect=rewrite_processing_state) as refresh_mock:
+                    response = app.test_client().get("/events/SavedClips/2026-03-31_06-53-21")
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("FSD 25%", response.get_data(as_text=True))
+        refresh_mock.assert_called_once()
+
+    def test_render_route_refreshes_stale_combined_processing_before_queueing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "combinedEvent": {"memberClipNames": [child_dir.name]},
+                        "driverAssistDisplay": {"label": "FSD", "percent": 100.0, "text": "FSD 100%"},
+                        "fsdOnPercent": 100.0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps({"combinedIntoClipName": owner_dir.name}),
+                encoding="utf-8",
+            )
+
+            def rewrite_processing_state(_: list[Path]) -> None:
+                (owner_dir / "sentrymanager.json").write_text(
+                    json.dumps(
+                        {
+                            "combinedEvent": {"memberClipNames": [child_dir.name]},
+                            "autopilotObservedDurationMs": 4000,
+                            "autopilotActiveDurationMs": 1000,
+                            "selfDrivingDurationMs": 1000,
+                            "driverAssistDisplay": {"label": "FSD", "percent": 25.0, "text": "FSD 25%"},
+                            "fsdOnPercent": 25.0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (child_dir / "sentrymanager.json").write_text(
+                    json.dumps(
+                        {
+                            "combinedIntoClipName": owner_dir.name,
+                            "autopilotObservedDurationMs": 0,
+                            "autopilotActiveDurationMs": 0,
+                            "selfDrivingDurationMs": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                with mock.patch.object(frontend_app_module, "ensure_sei_sidecars", side_effect=rewrite_processing_state) as refresh_mock:
+                    with mock.patch.object(frontend_app_module, "enqueue_render_job", return_value={"id": "job-1", "status": "queued"}) as enqueue_mock:
+                        response = app.test_client().post(
+                            "/events/SavedClips/2026-03-31_06-53-21/render",
+                            json={
+                                "outputProfile": "hd",
+                                "playerEdits": {
+                                    "trimStartTime": 0,
+                                    "trimEndTime": 1,
+                                    "exportFormat": "hd",
+                                    "startMarkerView": {"layout": "single", "cameraKey": "front"},
+                                    "cameraMarkers": [],
+                                },
+                            },
+                        )
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+            saved_owner_state = json.loads((owner_dir / "sentrymanager.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(202, response.status_code)
+        self.assertEqual("FSD 25%", saved_owner_state["driverAssistDisplay"]["text"])
+        refresh_mock.assert_called_once()
+        enqueue_mock.assert_called_once()
+
     def test_load_event_trigger_camera_key_uses_swapped_sentry_side_pairs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             event_dir = Path(temp_dir) / "SentryClips" / "2026-03-27_10-42-07"

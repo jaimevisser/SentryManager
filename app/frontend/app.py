@@ -138,8 +138,32 @@ def is_event_indexed(event_dir: Path) -> bool:
     return get_event_processing_marker_path(event_dir).is_file()
 
 
+def event_processing_needs_refresh(event_dir: Path) -> bool:
+    return event_needs_route_backfill(event_dir) or event_needs_processing_marker_backfill(event_dir)
+
+
+def refresh_event_processing_state(event_dir: Path) -> bool:
+    if not is_event_indexed(event_dir):
+        return False
+
+    if not event_processing_needs_refresh(event_dir):
+        return True
+
+    clip_files = get_event_clip_files(event_dir)
+    if not clip_files:
+        return False
+
+    try:
+        ensure_sei_sidecars(clip_files)
+    except (OSError, ValueError):
+        return False
+
+    _EVENT_SUMMARY_CACHE.clear()
+    return True
+
+
 def queue_event_processing(event_dir: Path) -> None:
-    if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir) and not event_needs_processing_marker_backfill(event_dir):
+    if is_event_indexed(event_dir) and not event_processing_needs_refresh(event_dir):
         return
 
     with _EVENT_INDEXING_LOCK:
@@ -159,7 +183,7 @@ def _run_event_processing_worker() -> None:
     while True:
         event_dir = _EVENT_INDEXING_QUEUE.get()
         try:
-            if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir) and not event_needs_processing_marker_backfill(event_dir):
+            if is_event_indexed(event_dir) and not event_processing_needs_refresh(event_dir):
                 continue
 
             clip_files = get_event_clip_files(event_dir)
