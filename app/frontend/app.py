@@ -722,6 +722,7 @@ def build_playlist_payload(
                 "segmentLabel": clip.segment_label,
                 "fileName": clip.file_name,
                 "url": url_for("event_clip", clip_path=clip.file_path),
+                "duration": get_clip_duration_seconds(resolve_path_within_footage_root(footage_root, clip.file_path)) or 0,
                 "hasTelemetry": get_segment_sei_sidecar_path(resolve_path_within_footage_root(footage_root, clip.source_event_path), clip.segment_key).is_file(),
                 "telemetryUrl": url_for("event_telemetry", event_path=clip.source_event_path, segment_key=clip.segment_key),
                 "hasRouteSvg": get_segment_route_svg_path(resolve_path_within_footage_root(footage_root, clip.source_event_path), clip.segment_key).is_file(),

@@ -61,6 +61,26 @@ test('manual layout switch survives active playback', async ({ page }) => {
   }, { initialTime }, { timeout: 15000 });
 });
 
+test('combined clip total duration stays stable when switching to rear camera', async ({ page }) => {
+  await page.goto(`${APP_URL}/events/SavedClips/2026-07-21_15-44-02`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__SENTRYMANAGER_TEST_API), null, { timeout: 15000 });
+
+  const initialTotalTime = await page.locator('[data-player-total-time]').textContent();
+  expect(initialTotalTime).toBeTruthy();
+
+  await page.locator('[data-camera-target="back"]').click();
+
+  await page.waitForFunction(({ expectedTotalTime }) => {
+    const state = window.__SENTRYMANAGER_TEST_API.getSnapshotState();
+    const totalTimeNode = document.querySelector('[data-player-total-time]');
+    return state.activeCameraKey === 'back'
+      && totalTimeNode
+      && totalTimeNode.textContent === expectedTotalTime;
+  }, { expectedTotalTime: initialTotalTime }, { timeout: 15000 });
+
+  await expect(page.locator('[data-player-total-time]')).toHaveText(initialTotalTime);
+});
+
 test('camera marker does not switch early before its saved time', async ({ page }) => {
   await page.goto(`${APP_URL}/events/${EVENT_PATH}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__SENTRYMANAGER_TEST_API), null, { timeout: 15000 });

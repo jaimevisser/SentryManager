@@ -75,6 +75,14 @@ export async function populateClipDurations(playlist, player, durationCache, onD
 
     const activeUrl = playlist[0].url;
     const durationLoads = playlist.map((clip, index) => {
+        if (Number.isFinite(clip.duration) && clip.duration > 0) {
+            durationCache.set(clip.url, clip.duration);
+            if (typeof onDurationUpdate === "function") {
+                onDurationUpdate();
+            }
+            return Promise.resolve();
+        }
+
         const durationPromise = index === 0 && activeUrl
             ? getStandardDuration(player, activeUrl, durationCache)
             : loadClipDuration(clip.url, durationCache);
@@ -105,13 +113,7 @@ async function getStandardDuration(player, expectedUrl, durationCache) {
         return cached;
     }
 
-    const cachedDuration = Array.from(durationCache.values()).find((duration) => duration > 0);
-    if (cachedDuration !== undefined) {
-        durationCache.set(expectedUrl, cachedDuration);
-        return cachedDuration;
-    }
-
-    if (Number.isFinite(player.duration) && player.duration > 0) {
+    if (isExpectedPlayerSource(player, expectedUrl) && Number.isFinite(player.duration) && player.duration > 0) {
         durationCache.set(expectedUrl, player.duration);
         return player.duration;
     }
@@ -149,7 +151,7 @@ function getPlayerMetadataDuration(player, expectedUrl, durationCache) {
             player.removeEventListener("error", onError);
         };
 
-        if (Number.isFinite(player.duration) && player.duration > 0) {
+        if (isExpectedPlayerSource(player, expectedUrl) && Number.isFinite(player.duration) && player.duration > 0) {
             finish(player.duration);
             return;
         }
@@ -157,6 +159,14 @@ function getPlayerMetadataDuration(player, expectedUrl, durationCache) {
         player.addEventListener("loadedmetadata", onLoadedMetadata);
         player.addEventListener("error", onError);
     });
+}
+
+function isExpectedPlayerSource(player, expectedUrl) {
+    if (!player?.currentSrc || !expectedUrl) {
+        return false;
+    }
+
+    return player.currentSrc.endsWith(expectedUrl);
 }
 
 function loadClipDuration(url, durationCache) {

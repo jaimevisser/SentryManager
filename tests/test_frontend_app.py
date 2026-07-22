@@ -277,6 +277,40 @@ class FrontendAppTests(unittest.TestCase):
         self.assertEqual("SavedClips/2026-03-31_06-53-21", playlists["front"][0].source_event_path)
         self.assertEqual("SavedClips/2026-03-31_06-54-21", playlists["front"][1].source_event_path)
 
+    def test_build_playlist_payload_includes_server_side_clip_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            event_dir.mkdir(parents=True)
+            clip_path = event_dir / "2026-03-31_06-53-21-front.mp4"
+            clip_path.write_bytes(b"")
+
+            camera_playlists = {
+                "front": [
+                    frontend_app_module.EventClip(
+                        camera_key="front",
+                        camera_label="Front",
+                        segment_key="2026-03-31_06-53-21",
+                        segment_label="06:53:21",
+                        file_name=clip_path.name,
+                        file_path=str(clip_path.relative_to(footage_root)),
+                        source_event_path="SavedClips/2026-03-31_06-53-21",
+                    )
+                ]
+            }
+
+            app = frontend_app_module.app
+            with app.test_request_context():
+                with mock.patch.object(frontend_app_module, "get_clip_duration_seconds", return_value=711.25):
+                    payload = frontend_app_module.build_playlist_payload(
+                        event_dir,
+                        "SavedClips/2026-03-31_06-53-21",
+                        footage_root,
+                        camera_playlists,
+                    )
+
+        self.assertEqual(711.25, payload["front"][0]["duration"])
+
     def test_infer_exact_event_time_window_probes_only_last_segment_and_caches_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             event_dir = Path(temp_dir) / "SavedClips" / "2026-07-21_15-44-02"
