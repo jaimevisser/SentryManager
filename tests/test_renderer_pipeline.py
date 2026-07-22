@@ -9,7 +9,10 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
+from app.sei import AUTOPILOT_SELF_DRIVING_STATE, FIELD_AUTOPILOT_STATE, SeiSample, serialize_sei_samples
+
 from app.renderer.pipeline import (
+    _calculate_export_driver_assist_display,
     _load_route_map_overlay,
     _draw_heading_cell,
     _draw_top_right_route_overlay,
@@ -160,6 +163,120 @@ class RendererPipelineTests(unittest.TestCase):
                                 player_edits={},
                                 output_profile="hd",
                             )
+
+    def test_calculate_export_driver_assist_display_uses_selected_render_window(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event_dir = Path(temp_dir) / "SavedClips" / "2026-03-28_09-12-13"
+            event_dir.mkdir(parents=True)
+            clip_path = event_dir / "2026-03-28_09-12-13-front.mp4"
+            clip_path.write_text("", encoding="utf-8")
+            (event_dir / "2026-03-28_09-12-13-telemetry.sei.bin").write_bytes(
+                serialize_sei_samples(
+                    [
+                        SeiSample(
+                            time_ms=0,
+                            presence_bits=1 << FIELD_AUTOPILOT_STATE,
+                            autopilot_state=AUTOPILOT_SELF_DRIVING_STATE,
+                        ),
+                        SeiSample(
+                            time_ms=1000,
+                            presence_bits=1 << FIELD_AUTOPILOT_STATE,
+                            autopilot_state=AUTOPILOT_SELF_DRIVING_STATE,
+                        ),
+                        SeiSample(
+                            time_ms=2000,
+                            presence_bits=1 << FIELD_AUTOPILOT_STATE,
+                            autopilot_state=0,
+                        ),
+                    ],
+                    schema_version=1,
+                )
+            )
+
+            render_plan = {
+                "segments": [
+                    {
+                        "segmentId": "seg-001",
+                        "slots": [
+                            {
+                                "fragments": [
+                                    {
+                                        "sourceClip": str(clip_path),
+                                        "sourceIn": 0.0,
+                                        "sourceOut": 3.0,
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            }
+            media_clips_by_path = {
+                str(clip_path): {
+                    "absolute_file_path": str(clip_path),
+                    "clip_start_time": 0.0,
+                }
+            }
+
+            display = _calculate_export_driver_assist_display(render_plan, media_clips_by_path)
+
+        self.assertEqual({"label": "FSD", "percent": 66.67, "text": "FSD 67%"}, display)
+
+    def test_render_event_prefers_trimmed_driver_assist_display_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_dir = footage_root / "SavedClips" / "2026-03-28_09-12-13"
+            output_dir = event_dir / "exports"
+            intermediate_dir = output_dir / "20260503T120314Z-hd-segments"
+            event_dir.mkdir(parents=True)
+            output_dir.mkdir(parents=True)
+            (event_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "autopilotObservedDurationMs": 1000,
+                        "autopilotActiveDurationMs": 1000,
+                        "selfDrivingDurationMs": 1000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            render_plan = {
+                "outputProfile": "hd",
+                "outputPath": str(output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.mp4"),
+                "intermediateDir": str(intermediate_dir),
+                "renderPlanPath": str(output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.render-plan.json"),
+                "segments": [{"segmentId": "seg-001", "missingCameras": []}],
+                "frameSize": {"width": 1920, "height": 1080},
+                "frameRate": 30.0,
+                "mediaIndex": [],
+            }
+
+            def fake_render_segments(**kwargs: object) -> list[Path]:
+                self.assertEqual(
+                    {"label": "FSD", "percent": 66.67, "text": "FSD 67%"},
+                    kwargs["event_driver_assist_display"],
+                )
+                intermediate_dir.mkdir(parents=True, exist_ok=True)
+                segment_output = intermediate_dir / "seg-001.mp4"
+                segment_output.write_text("segment", encoding="utf-8")
+                return [segment_output]
+
+            def fake_run_ffmpeg(command: list[str]) -> None:
+                Path(command[-1]).write_text("new video", encoding="utf-8")
+
+            with patch("app.renderer.pipeline.build_render_plan", return_value=render_plan):
+                with patch("app.renderer.pipeline._calculate_export_driver_assist_display", return_value={"label": "FSD", "percent": 66.67, "text": "FSD 67%"}):
+                    with patch("app.renderer.pipeline._load_event_payload", return_value={}):
+                        with patch("app.renderer.pipeline._render_plan_segments", side_effect=fake_render_segments):
+                            with patch("app.renderer.pipeline._run_ffmpeg", side_effect=fake_run_ffmpeg):
+                                render_event(
+                                    event_dir=event_dir,
+                                    footage_root=footage_root,
+                                    event_id="SavedClips/2026-03-28_09-12-13",
+                                    player_edits={},
+                                    output_profile="hd",
+                                )
 
     def test_draw_telemetry_frame_renders_location_in_top_left_safe_zone(self) -> None:
         frame, has_overlay = _draw_telemetry_frame(

@@ -17,11 +17,13 @@ import tempfile
 from PIL import Image, ImageDraw, ImageFont
 
 from ..sei import (
+    AUTOPILOT_SELF_DRIVING_STATE,
     COLUMN_DEFINITIONS,
     FORMAT_MAGIC,
     FORMAT_VERSION,
     HEADER_SIZE,
     build_event_route_svg_from_event_dirs,
+    calculate_driver_assist_display,
     calculate_combined_driver_assist_display,
 )
 
@@ -452,7 +454,9 @@ def render_event(
     event_base_timestamp = _get_event_base_timestamp(event_payload, event_dir)
     event_location_label = _get_event_location_label(event_payload)
     event_processing_states = [_load_event_processing_state(source_event_dir) for source_event_dir in _get_event_source_directories(event_dir)]
-    event_driver_assist_display = calculate_combined_driver_assist_display(event_processing_states)
+    event_driver_assist_display = _calculate_export_driver_assist_display(render_plan, media_clips_by_path)
+    if event_driver_assist_display is None:
+        event_driver_assist_display = calculate_combined_driver_assist_display(event_processing_states)
 
     intermediate_dir = Path(render_plan["intermediateDir"])
     segment_outputs = _render_plan_segments(
@@ -548,6 +552,95 @@ def _build_render_result(render_plan: dict[str, object]) -> dict[str, object]:
             }
         ),
     }
+
+
+def _calculate_export_driver_assist_display(
+    render_plan: dict[str, object],
+    media_clips_by_path: dict[str, dict[str, object]],
+) -> dict[str, object] | None:
+    total_observed_duration_ms = 0
+    total_active_duration_ms = 0
+    total_self_driving_duration_ms = 0
+    has_selected_telemetry = False
+
+    for segment in render_plan.get("segments", []):
+        if not isinstance(segment, dict) or not isinstance(segment.get("slots"), list):
+            continue
+        timeline_map = _build_segment_reference_timeline(segment, media_clips_by_path)
+        for entry in timeline_map:
+            source_clip = Path(str(entry["sourceClip"]))
+            segment_key = str(entry["segmentKey"])
+            source_in_ms = max(0, int(round(float(entry["sourceIn"]) * 1000)))
+            source_out_ms = max(
+                source_in_ms,
+                int(round((float(entry["sourceIn"]) + (float(entry["outputEnd"]) - float(entry["outputStart"]))) * 1000)),
+            )
+            if source_out_ms <= source_in_ms:
+                continue
+
+            telemetry = _load_telemetry_sidecar(source_clip.with_name(f"{segment_key}-telemetry.sei.bin"))
+            if telemetry is None:
+                continue
+
+            observed_duration_ms, active_duration_ms, self_driving_duration_ms = _calculate_driver_assist_durations_for_interval(
+                telemetry,
+                source_in_ms,
+                source_out_ms,
+            )
+            has_selected_telemetry = True
+            total_observed_duration_ms += observed_duration_ms
+            total_active_duration_ms += active_duration_ms
+            total_self_driving_duration_ms += self_driving_duration_ms
+
+    if not has_selected_telemetry:
+        return None
+
+    return calculate_driver_assist_display(
+        total_active_duration_ms,
+        total_observed_duration_ms,
+        total_self_driving_duration_ms,
+    )
+
+
+def _calculate_driver_assist_durations_for_interval(
+    telemetry: dict[str, list[int]],
+    start_time_ms: int,
+    end_time_ms: int,
+) -> tuple[int, int, int]:
+    if end_time_ms <= start_time_ms:
+        return 0, 0, 0
+
+    time_values = telemetry.get("time_ms") or []
+    presence_bits_values = telemetry.get("presence_bits") or []
+    autopilot_state_values = telemetry.get("autopilot_state") or []
+    if not time_values or len(time_values) != len(presence_bits_values) or len(time_values) != len(autopilot_state_values):
+        return 0, 0, 0
+
+    observed_duration_ms = end_time_ms - start_time_ms
+    active_duration_ms = 0
+    self_driving_duration_ms = 0
+    for index, raw_sample_time_ms in enumerate(time_values):
+        sample_time_ms = int(raw_sample_time_ms)
+        next_time_ms = end_time_ms
+        if index + 1 < len(time_values):
+            next_time_ms = int(time_values[index + 1])
+        overlap_start_ms = max(start_time_ms, sample_time_ms)
+        overlap_end_ms = min(end_time_ms, next_time_ms)
+        interval_duration_ms = overlap_end_ms - overlap_start_ms
+        if interval_duration_ms <= 0:
+            continue
+
+        presence_bits = int(presence_bits_values[index])
+        if not (presence_bits & AUTOPILOT_PRESENT_MASK):
+            continue
+
+        autopilot_state = int(autopilot_state_values[index])
+        if autopilot_state != AUTOPILOT_NONE_STATE:
+            active_duration_ms += interval_duration_ms
+        if autopilot_state == AUTOPILOT_SELF_DRIVING_STATE:
+            self_driving_duration_ms += interval_duration_ms
+
+    return observed_duration_ms, active_duration_ms, self_driving_duration_ms
 
 
 def _prune_successful_render_outputs(render_plan: dict[str, object]) -> None:

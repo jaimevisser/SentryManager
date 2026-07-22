@@ -31,6 +31,8 @@ This file tracks remaining delivery work. Implemented behavior belongs in the RE
 ## Operational Hardening
 
 - [ ] Continue splitting the remaining oversized renderer and telemetry modules so composition roots stay reviewable and testable.
+- [ ] Decide whether a combined owner's `sentrymanager.json` should store owner-local driver-assist durations or the same owner-plus-members aggregate that the viewer/export use today.
+- [ ] Extend processing-marker freshness checks to catch non-zero duration drift against existing telemetry sidecars, not just zeroed summaries.
 - [ ] Add structured logging for discovery, telemetry extraction, editing, and export jobs.
 - [ ] Decide whether to ship an optional dedicated-worker compose override for heavier render workloads on top of the new single-container default.
 - [ ] Expand automated tests for remaining discovery, telemetry decoding, and timeline/export paths beyond the covered combined-duration and combined-driver-assist regressions.

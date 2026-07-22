@@ -7,16 +7,23 @@ import unittest
 from unittest import mock
 
 from app.sei import (
+    AUTOPILOT_SELF_DRIVING_STATE,
+    FIELD_AUTOPILOT_STATE,
+    PROCESSING_MARKER_VERSION,
+    SeiSample,
     TimedRoutePoint,
     build_route_svg_from_timed_points,
     build_route_svg_from_gps_points,
+    calculate_autopilot_durations,
     calculate_driver_assist_display,
     ensure_event_processing_marker,
     ensure_sei_sidecars,
+    event_needs_processing_marker_backfill,
     event_needs_route_backfill,
     get_event_route_svg_path,
     get_segment_route_svg_path,
     get_segment_sei_sidecar_path,
+    serialize_sei_samples,
 )
 
 
@@ -128,6 +135,66 @@ class SeiTests(unittest.TestCase):
         self.assertEqual(0, payload["selfDrivingDurationMs"])
         self.assertNotIn("fsdOnPercent", payload)
 
+    def test_event_processing_marker_backfill_detects_zeroed_marker_with_active_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event_dir = Path(temp_dir)
+            marker_path = event_dir / "sentrymanager.json"
+            marker_path.write_text(
+                json.dumps(
+                    {
+                        "hasAutopilotActivity": False,
+                        "hasSteeringAngleData": True,
+                        "autopilotObservedDurationMs": 0,
+                        "autopilotActiveDurationMs": 0,
+                        "selfDrivingDurationMs": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            get_segment_sei_sidecar_path(event_dir, "2026-03-31_06-42-49").write_bytes(
+                serialize_sei_samples(
+                    [
+                        SeiSample(
+                            time_ms=0,
+                            presence_bits=1 << FIELD_AUTOPILOT_STATE,
+                            autopilot_state=AUTOPILOT_SELF_DRIVING_STATE,
+                        ),
+                        SeiSample(
+                            time_ms=1000,
+                            presence_bits=1 << FIELD_AUTOPILOT_STATE,
+                            autopilot_state=AUTOPILOT_SELF_DRIVING_STATE,
+                        ),
+                    ],
+                    schema_version=1,
+                )
+            )
+
+            needs_backfill = event_needs_processing_marker_backfill(event_dir)
+
+        self.assertTrue(needs_backfill)
+
+    def test_calculate_autopilot_durations_uses_clip_duration_when_telemetry_disappears(self) -> None:
+        observed_duration_ms, active_duration_ms, self_driving_duration_ms = calculate_autopilot_durations(
+            [
+                SeiSample(
+                    time_ms=0,
+                    presence_bits=1 << FIELD_AUTOPILOT_STATE,
+                    autopilot_state=AUTOPILOT_SELF_DRIVING_STATE,
+                ),
+                SeiSample(
+                    time_ms=1000,
+                    presence_bits=1 << FIELD_AUTOPILOT_STATE,
+                    autopilot_state=AUTOPILOT_SELF_DRIVING_STATE,
+                ),
+                SeiSample(time_ms=2000, presence_bits=0, autopilot_state=0),
+            ],
+            clip_duration_ms=3000,
+        )
+
+        self.assertEqual(3000, observed_duration_ms)
+        self.assertEqual(2000, active_duration_ms)
+        self.assertEqual(2000, self_driving_duration_ms)
+
     def test_ensure_sei_sidecars_skips_rebuild_when_sidecars_and_marker_exist(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             event_dir = Path(temp_dir)
@@ -138,6 +205,7 @@ class SeiTests(unittest.TestCase):
             marker_path.write_text(
                 json.dumps(
                     {
+                        "processingVersion": PROCESSING_MARKER_VERSION,
                         "hasAutopilotActivity": True,
                         "hasSteeringAngleData": True,
                         "eventCategoryLabel": "Saved",

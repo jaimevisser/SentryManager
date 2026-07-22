@@ -13,6 +13,7 @@ SEI_SIDECAR_SUFFIX = "-telemetry.sei.bin"
 ROUTE_SVG_SUFFIX = "-route.svg"
 EVENT_ROUTE_SVG_NAME = "route-combined.svg"
 PROCESSING_MARKER_NAME = "sentrymanager.json"
+PROCESSING_MARKER_VERSION = 3
 AUTOPILOT_OBSERVED_DURATION_MS_KEY = "autopilotObservedDurationMs"
 AUTOPILOT_ACTIVE_DURATION_MS_KEY = "autopilotActiveDurationMs"
 SELF_DRIVING_DURATION_MS_KEY = "selfDrivingDurationMs"
@@ -72,6 +73,8 @@ COLUMN_DEFINITIONS = (
 )
 COLUMN_MASK = (1 << len(COLUMN_DEFINITIONS)) - 1
 HEADER_SIZE = ((HEADER_STRUCT.size + (4 * len(COLUMN_DEFINITIONS))) + 7) & ~7
+PRESENCE_BITS_COLUMN_INDEX = 1
+AUTOPILOT_STATE_COLUMN_INDEX = 5
 
 
 @dataclass(slots=True)
@@ -278,6 +281,9 @@ def event_needs_processing_marker_backfill(event_dir: Path) -> bool:
     if not isinstance(payload, dict):
         return True
 
+    if payload.get("processingVersion") != PROCESSING_MARKER_VERSION:
+        return True
+
     for key in (
         AUTOPILOT_OBSERVED_DURATION_MS_KEY,
         AUTOPILOT_ACTIVE_DURATION_MS_KEY,
@@ -287,7 +293,117 @@ def event_needs_processing_marker_backfill(event_dir: Path) -> bool:
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             return True
 
+    if processing_marker_conflicts_with_sidecars(event_dir, payload):
+        return True
+
     return False
+
+
+def processing_marker_conflicts_with_sidecars(event_dir: Path, payload: dict[str, object]) -> bool:
+    raw_observed_duration_ms = payload.get(AUTOPILOT_OBSERVED_DURATION_MS_KEY)
+    raw_active_duration_ms = payload.get(AUTOPILOT_ACTIVE_DURATION_MS_KEY)
+    raw_self_driving_duration_ms = payload.get(SELF_DRIVING_DURATION_MS_KEY)
+    has_autopilot_activity = payload.get("hasAutopilotActivity") is True
+
+    if not (
+        isinstance(raw_observed_duration_ms, int)
+        and not isinstance(raw_observed_duration_ms, bool)
+        and isinstance(raw_active_duration_ms, int)
+        and not isinstance(raw_active_duration_ms, bool)
+        and isinstance(raw_self_driving_duration_ms, int)
+        and not isinstance(raw_self_driving_duration_ms, bool)
+    ):
+        return True
+
+    if raw_observed_duration_ms > 0 and raw_active_duration_ms > 0 and raw_self_driving_duration_ms > 0 and has_autopilot_activity:
+        return False
+
+    sidecar_paths = sorted(event_dir.glob(f"*{SEI_SIDECAR_SUFFIX}"), key=lambda path: path.name.lower())
+    if not sidecar_paths:
+        return False
+
+    saw_observed_samples = False
+    saw_active_samples = False
+    saw_self_driving_samples = False
+    for sidecar_path in sidecar_paths:
+        observed_samples, active_samples, self_driving_samples = read_sidecar_autopilot_sample_presence(sidecar_path)
+        saw_observed_samples = saw_observed_samples or observed_samples
+        saw_active_samples = saw_active_samples or active_samples
+        saw_self_driving_samples = saw_self_driving_samples or self_driving_samples
+        if saw_observed_samples and saw_active_samples and saw_self_driving_samples:
+            break
+
+    if raw_observed_duration_ms == 0 and saw_observed_samples:
+        return True
+    if raw_active_duration_ms == 0 and saw_active_samples:
+        return True
+    if raw_self_driving_duration_ms == 0 and saw_self_driving_samples:
+        return True
+    if (not has_autopilot_activity) and saw_active_samples:
+        return True
+
+    return False
+
+
+def read_sidecar_autopilot_sample_presence(sidecar_path: Path) -> tuple[bool, bool, bool]:
+    try:
+        payload = sidecar_path.read_bytes()
+    except OSError:
+        return False, False, False
+
+    if len(payload) < HEADER_SIZE:
+        return False, False, False
+
+    try:
+        magic, format_version, header_size, sample_count, _, _ = HEADER_STRUCT.unpack_from(payload, 0)
+    except struct.error:
+        return False, False, False
+
+    if magic != FORMAT_MAGIC or format_version != FORMAT_VERSION or sample_count <= 0:
+        return False, False, False
+    if header_size < HEADER_SIZE or header_size > len(payload):
+        return False, False, False
+
+    offsets_length = len(COLUMN_DEFINITIONS)
+    try:
+        offsets = struct.unpack_from(f"<{offsets_length}I", payload, HEADER_STRUCT.size)
+    except struct.error:
+        return False, False, False
+
+    presence_bits_offset = offsets[PRESENCE_BITS_COLUMN_INDEX]
+    autopilot_state_offset = offsets[AUTOPILOT_STATE_COLUMN_INDEX]
+    if presence_bits_offset == 0 or autopilot_state_offset == 0:
+        return False, False, False
+
+    presence_bits_size = sample_count * struct.calcsize("<H")
+    autopilot_state_size = sample_count * struct.calcsize("<B")
+    if presence_bits_offset < header_size or presence_bits_offset + presence_bits_size > len(payload):
+        return False, False, False
+    if autopilot_state_offset < header_size or autopilot_state_offset + autopilot_state_size > len(payload):
+        return False, False, False
+
+    try:
+        presence_bits = struct.unpack_from(f"<{sample_count}H", payload, presence_bits_offset)
+        autopilot_states = struct.unpack_from(f"<{sample_count}B", payload, autopilot_state_offset)
+    except struct.error:
+        return False, False, False
+
+    has_observed_samples = False
+    has_active_samples = False
+    has_self_driving_samples = False
+    autopilot_present_mask = 1 << FIELD_AUTOPILOT_STATE
+    for sample_presence_bits, autopilot_state in zip(presence_bits, autopilot_states):
+        if not (sample_presence_bits & autopilot_present_mask):
+            continue
+        has_observed_samples = True
+        if autopilot_state != AUTOPILOT_NONE_STATE:
+            has_active_samples = True
+        if autopilot_state == AUTOPILOT_SELF_DRIVING_STATE:
+            has_self_driving_samples = True
+        if has_active_samples and has_self_driving_samples:
+            break
+
+    return has_observed_samples, has_active_samples, has_self_driving_samples
 
 
 def route_svg_has_projection_metadata(route_svg_path: Path) -> bool:
@@ -500,6 +616,7 @@ def ensure_event_processing_marker(
     marker_payload_value["hasAutopilotActivity"] = has_autopilot_activity
     marker_payload_value["hasSteeringAngleData"] = has_steering_angle_data
     marker_payload_value["eventCategoryLabel"] = event_category_label
+    marker_payload_value["processingVersion"] = PROCESSING_MARKER_VERSION
     marker_payload_value[AUTOPILOT_OBSERVED_DURATION_MS_KEY] = max(0, int(autopilot_observed_duration_ms))
     marker_payload_value[AUTOPILOT_ACTIVE_DURATION_MS_KEY] = max(0, int(autopilot_active_duration_ms))
     marker_payload_value[SELF_DRIVING_DURATION_MS_KEY] = max(0, int(self_driving_duration_ms))
@@ -989,7 +1106,7 @@ def calculate_autopilot_durations(samples: list[SeiSample], clip_duration_ms: in
     if not samples or clip_duration_ms <= 0:
         return 0, 0, 0
 
-    observed_duration_ms = 0
+    observed_duration_ms = clip_duration_ms
     active_duration_ms = 0
     self_driving_duration_ms = 0
     for index, sample in enumerate(samples):
@@ -1001,7 +1118,6 @@ def calculate_autopilot_durations(samples: list[SeiSample], clip_duration_ms: in
             continue
         if not (sample.presence_bits & (1 << FIELD_AUTOPILOT_STATE)):
             continue
-        observed_duration_ms += interval_duration_ms
         if sample.autopilot_state != AUTOPILOT_NONE_STATE:
             active_duration_ms += interval_duration_ms
         if sample.autopilot_state == AUTOPILOT_SELF_DRIVING_STATE:

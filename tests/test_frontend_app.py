@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 frontend_app_module = importlib.import_module("app.frontend.app")
+sei_module = importlib.import_module("app.sei")
 
 
 class FrontendAppTests(unittest.TestCase):
@@ -237,6 +238,73 @@ class FrontendAppTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertIn("FSD 25%", response.get_data(as_text=True))
         refresh_mock.assert_called_once()
+
+    def test_event_player_refreshes_zeroed_processing_when_sidecar_shows_fsd(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            event_dir.mkdir(parents=True)
+            clip_file = event_dir / "2026-03-31_06-42-49-front.mp4"
+            clip_file.write_bytes(b"")
+            (event_dir / "2026-03-31_06-42-49-telemetry.sei.bin").write_bytes(
+                sei_module.serialize_sei_samples(
+                    [
+                        sei_module.SeiSample(
+                            time_ms=0,
+                            presence_bits=1 << sei_module.FIELD_AUTOPILOT_STATE,
+                            autopilot_state=sei_module.AUTOPILOT_SELF_DRIVING_STATE,
+                        ),
+                        sei_module.SeiSample(
+                            time_ms=1000,
+                            presence_bits=1 << sei_module.FIELD_AUTOPILOT_STATE,
+                            autopilot_state=sei_module.AUTOPILOT_SELF_DRIVING_STATE,
+                        ),
+                    ],
+                    schema_version=1,
+                )
+            )
+            (event_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "hasAutopilotActivity": False,
+                        "hasSteeringAngleData": True,
+                        "autopilotObservedDurationMs": 0,
+                        "autopilotActiveDurationMs": 0,
+                        "selfDrivingDurationMs": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def rewrite_processing_state(_: list[Path]) -> None:
+                (event_dir / "sentrymanager.json").write_text(
+                    json.dumps(
+                        {
+                            "hasAutopilotActivity": True,
+                            "hasSteeringAngleData": True,
+                            "autopilotObservedDurationMs": 1000,
+                            "autopilotActiveDurationMs": 1000,
+                            "selfDrivingDurationMs": 1000,
+                            "driverAssistDisplay": {"label": "FSD", "percent": 100.0, "text": "FSD 100%"},
+                            "fsdOnPercent": 100.0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                with mock.patch.object(frontend_app_module, "event_needs_route_backfill", return_value=False):
+                    with mock.patch.object(frontend_app_module, "ensure_sei_sidecars", side_effect=rewrite_processing_state) as refresh_mock:
+                        response = app.test_client().get("/events/SavedClips/2026-03-31_06-53-21")
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("FSD 100%", response.get_data(as_text=True))
+        refresh_mock.assert_called_once_with([clip_file])
 
     def test_render_route_refreshes_stale_combined_processing_before_queueing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -724,6 +792,7 @@ class FrontendAppTests(unittest.TestCase):
             (owner_dir / "sentrymanager.json").write_text(
                 json.dumps(
                     {
+                        "processingVersion": sei_module.PROCESSING_MARKER_VERSION,
                         "combinedEvent": {"memberClipNames": [child_dir.name]},
                         "autopilotObservedDurationMs": 1000,
                         "autopilotActiveDurationMs": 1000,
@@ -735,6 +804,7 @@ class FrontendAppTests(unittest.TestCase):
             (child_dir / "sentrymanager.json").write_text(
                 json.dumps(
                     {
+                        "processingVersion": sei_module.PROCESSING_MARKER_VERSION,
                         "combinedIntoClipName": owner_dir.name,
                         "autopilotObservedDurationMs": 4000,
                         "autopilotActiveDurationMs": 1000,
