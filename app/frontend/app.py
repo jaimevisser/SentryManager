@@ -139,7 +139,17 @@ def is_event_indexed(event_dir: Path) -> bool:
 
 
 def event_processing_needs_refresh(event_dir: Path) -> bool:
-    return event_needs_route_backfill(event_dir) or event_needs_processing_marker_backfill(event_dir)
+    candidate_directories = get_combined_event_source_directories(event_dir)
+    if event_dir not in candidate_directories:
+        candidate_directories = [event_dir, *candidate_directories]
+
+    for candidate_dir in candidate_directories:
+        if not is_event_indexed(candidate_dir):
+            return True
+        if event_needs_route_backfill(candidate_dir) or event_needs_processing_marker_backfill(candidate_dir):
+            return True
+
+    return False
 
 
 def refresh_event_processing_state(event_dir: Path) -> bool:
@@ -367,6 +377,13 @@ def get_combined_event_directories(event_dir: Path) -> list[Path]:
         seen_directories.add(resolved_member_dir)
         event_directories.append(member_dir)
     return event_directories
+
+
+def get_combined_event_source_directories(event_dir: Path) -> list[Path]:
+    source_directories = [source_event_dir for source_event_dir in get_combined_event_directories(event_dir) if get_direct_event_clip_files(source_event_dir)]
+    if source_directories:
+        return source_directories
+    return [event_dir]
 
 
 def get_event_clip_files(event_dir: Path) -> list[Path]:
@@ -783,7 +800,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     event_processing_state = load_event_processing_state(event_dir)
     has_combined_members = has_combined_event_members(event_processing_state)
     maybe_backfill_combined_event_route_svg(event_dir, event_processing_state)
-    combined_processing_states = [load_event_processing_state(member_dir) for member_dir in get_combined_event_directories(event_dir)]
+    combined_processing_states = [load_event_processing_state(member_dir) for member_dir in get_combined_event_source_directories(event_dir)]
     event_driver_assist_display = calculate_combined_driver_assist_display(combined_processing_states)
     saved_player_edits = get_saved_player_edits(event_processing_state)
     event_notes = read_event_notes(event_dir)

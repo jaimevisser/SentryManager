@@ -97,6 +97,7 @@ class RendererPipelineTests(unittest.TestCase):
             owner_dir.mkdir(parents=True)
             child_dir.mkdir(parents=True)
             output_dir.mkdir(parents=True)
+            (child_dir / "2026-03-28_09-13-13-front.mp4").write_text("", encoding="utf-8")
             (owner_dir / "sentrymanager.json").write_text(
                 json.dumps(
                     {
@@ -111,9 +112,9 @@ class RendererPipelineTests(unittest.TestCase):
             (child_dir / "sentrymanager.json").write_text(
                 json.dumps(
                     {
-                        "autopilotObservedDurationMs": 1000,
-                        "autopilotActiveDurationMs": 0,
-                        "selfDrivingDurationMs": 0,
+                        "autopilotObservedDurationMs": 4000,
+                        "autopilotActiveDurationMs": 1000,
+                        "selfDrivingDurationMs": 1000,
                     }
                 ),
                 encoding="utf-8",
@@ -137,7 +138,7 @@ class RendererPipelineTests(unittest.TestCase):
 
             def fake_render_segments(**kwargs: object) -> list[Path]:
                 self.assertEqual(
-                    {"label": "FSD", "percent": 50.0, "text": "FSD 50%"},
+                    {"label": "FSD", "percent": 25.0, "text": "FSD 25%"},
                     kwargs["event_driver_assist_display"],
                 )
                 intermediate_dir.mkdir(parents=True, exist_ok=True)

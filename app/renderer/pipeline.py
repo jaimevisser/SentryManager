@@ -170,16 +170,23 @@ def _get_event_source_directories(event_dir: Path) -> list[Path]:
     if not member_names:
         return [event_dir]
 
-    event_directories = [event_dir]
-    seen_directories = {event_dir.resolve()}
+    event_directories: list[Path] = []
+    seen_directories: set[Path] = set()
+    if any(event_dir.glob("*.mp4")):
+        event_directories.append(event_dir)
+        seen_directories.add(event_dir.resolve())
     for member_name in member_names:
         member_dir = event_dir.parent / member_name
         resolved_member_dir = member_dir.resolve()
         if resolved_member_dir in seen_directories or not member_dir.is_dir():
             continue
+        if not any(member_dir.glob("*.mp4")):
+            continue
         seen_directories.add(resolved_member_dir)
         event_directories.append(member_dir)
-    return event_directories
+    if event_directories:
+        return event_directories
+    return [event_dir]
 
 
 @dataclass(frozen=True)

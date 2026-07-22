@@ -720,7 +720,6 @@ class FrontendAppTests(unittest.TestCase):
             child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
             owner_dir.mkdir(parents=True)
             child_dir.mkdir(parents=True)
-            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
             (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
             (owner_dir / "sentrymanager.json").write_text(
                 json.dumps(
@@ -737,9 +736,9 @@ class FrontendAppTests(unittest.TestCase):
                 json.dumps(
                     {
                         "combinedIntoClipName": owner_dir.name,
-                        "autopilotObservedDurationMs": 1000,
-                        "autopilotActiveDurationMs": 0,
-                        "selfDrivingDurationMs": 0,
+                        "autopilotObservedDurationMs": 4000,
+                        "autopilotActiveDurationMs": 1000,
+                        "selfDrivingDurationMs": 1000,
                     }
                 ),
                 encoding="utf-8",
@@ -755,7 +754,7 @@ class FrontendAppTests(unittest.TestCase):
                 app.config["TESLACAM_ROOT"] = previous_root
 
         self.assertEqual(200, response.status_code)
-        self.assertIn("FSD 50%", response.get_data(as_text=True))
+        self.assertIn("FSD 25%", response.get_data(as_text=True))
 
     def test_uncombine_event_directory_clears_combined_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
