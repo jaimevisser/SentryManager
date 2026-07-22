@@ -180,6 +180,36 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
             "combinedPaths": [frontend_module.get_event_relative_path(event_dir, footage_root) for event_dir in combined_or_error],
         })
 
+    @app.post("/events/combine/eligibility")
+    def combine_eligibility():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Invalid combine request."}), 400
+
+        raw_event_paths = payload.get("eventPaths")
+        if not isinstance(raw_event_paths, list):
+            return jsonify({"error": "Invalid combine request."}), 400
+
+        footage_root = frontend_module.get_footage_root(app)
+        event_directories: list[Path] = []
+        seen_directories: set[Path] = set()
+
+        for raw_event_path in raw_event_paths:
+            if not isinstance(raw_event_path, str) or not raw_event_path.strip():
+                return jsonify({"error": "Invalid clip selection."}), 400
+
+            normalized_event_path = Path(raw_event_path.strip())
+            event_dir = frontend_module.resolve_path_within_footage_root(footage_root, str(normalized_event_path))
+            if not event_dir.is_dir():
+                return jsonify({"error": f"Clip folder not found: {raw_event_path}"}), 404
+            if event_dir in seen_directories:
+                continue
+
+            seen_directories.add(event_dir)
+            event_directories.append(event_dir)
+
+        return jsonify(frontend_module.get_combine_selection_status(footage_root, event_directories))
+
     @app.post("/events/<path:event_path>/uncombine")
     def uncombine_event(event_path: str):
         footage_root = frontend_module.get_footage_root(app)

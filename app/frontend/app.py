@@ -64,6 +64,8 @@ COMBINED_EVENT_ROUTE_SVG_VERSION_KEY = "routeSvgVersion"
 COMBINED_EVENT_ROUTE_SVG_VERSION = 1
 COMBINED_INTO_KEY = "combinedIntoClipName"
 EVENT_NOTES_FILE_NAME = "notes.txt"
+EVENT_TIME_WINDOW_FILE_NAME = "event-window.json"
+EVENT_TIME_WINDOW_CACHE_VERSION = 1
 COMBINE_SEGMENT_SECONDS = 60.0
 COMBINE_MARGIN_SECONDS = 1.0
 
@@ -347,37 +349,177 @@ def get_event_clip_files(event_dir: Path) -> list[Path]:
     return sorted(clip_files, key=lambda path: path.name.lower())
 
 
+def get_event_time_window_path(event_dir: Path) -> Path:
+    return event_dir / EVENT_TIME_WINDOW_FILE_NAME
+
+
+def get_event_segment_source_clips(clip_files: list[Path]) -> list[tuple[str, Path]]:
+    segment_camera_files: dict[str, dict[str, Path]] = {}
+    for clip_file in sorted(clip_files, key=lambda path: path.name.lower()):
+        segment_key, camera_key = split_clip_stem(clip_file.stem)
+        if camera_key == "unknown":
+            continue
+        segment_camera_files.setdefault(segment_key, {})[camera_key] = clip_file
+
+    segment_source_clips: list[tuple[str, Path]] = []
+    for segment_key in sorted(segment_camera_files):
+        camera_files = segment_camera_files[segment_key]
+        source_clip = camera_files.get("front")
+        if source_clip is None:
+            source_clip = next(iter(camera_files.values()), None)
+        if source_clip is None:
+            continue
+        segment_source_clips.append((segment_key, source_clip))
+    return segment_source_clips
+
+
 def infer_event_time_window_from_clip_files(clip_files: list[Path]) -> tuple[datetime, datetime] | None:
     segment_timestamps = sorted({
-        infer_event_timestamp(split_clip_stem(path.stem)[0])
-        for path in clip_files
+        infer_event_timestamp(segment_key)
+        for segment_key, _ in get_event_segment_source_clips(clip_files)
     })
     valid_segment_timestamps = [timestamp for timestamp in segment_timestamps if timestamp is not None]
     if not valid_segment_timestamps:
         return None
-
-    clip_windows: list[tuple[datetime, datetime]] = []
-    for clip_file in clip_files:
-        segment_timestamp = infer_event_timestamp(split_clip_stem(clip_file.stem)[0])
-        if segment_timestamp is None:
-            continue
-        duration_seconds = get_clip_duration_seconds(clip_file)
-        if duration_seconds is None:
-            continue
-        clip_windows.append((segment_timestamp, segment_timestamp + timedelta(seconds=duration_seconds)))
-
-    if clip_windows:
-        window_start = min(window[0] for window in clip_windows)
-        window_end = max(window[1] for window in clip_windows)
-        return window_start, window_end
 
     window_start = valid_segment_timestamps[0]
     window_end = valid_segment_timestamps[-1] + timedelta(seconds=COMBINE_SEGMENT_SECONDS)
     return window_start, window_end
 
 
+def read_cached_event_time_window(
+    event_dir: Path,
+    segment_source_clips: list[tuple[str, Path]],
+) -> tuple[datetime, datetime] | None:
+    cache_path = get_event_time_window_path(event_dir)
+    if not cache_path.is_file() or not segment_source_clips:
+        return None
+
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("version") != EVENT_TIME_WINDOW_CACHE_VERSION:
+        return None
+
+    first_segment_key = segment_source_clips[0][0]
+    last_segment_key, last_clip = segment_source_clips[-1]
+    if payload.get("firstSegmentKey") != first_segment_key:
+        return None
+    if payload.get("lastSegmentKey") != last_segment_key:
+        return None
+    if payload.get("lastClipFileName") != last_clip.name:
+        return None
+    if payload.get("lastClipMtimeNs") != get_path_mtime_ns(last_clip):
+        return None
+
+    raw_start_timestamp = payload.get("startTimestamp")
+    raw_end_timestamp = payload.get("endTimestamp")
+    if not isinstance(raw_start_timestamp, str) or not isinstance(raw_end_timestamp, str):
+        return None
+
+    try:
+        start_timestamp = datetime.fromisoformat(raw_start_timestamp)
+        end_timestamp = datetime.fromisoformat(raw_end_timestamp)
+    except ValueError:
+        return None
+
+    if end_timestamp <= start_timestamp:
+        return None
+    return start_timestamp, end_timestamp
+
+
+def write_cached_event_time_window(
+    event_dir: Path,
+    segment_source_clips: list[tuple[str, Path]],
+    time_window: tuple[datetime, datetime],
+) -> None:
+    if not segment_source_clips:
+        return
+
+    last_segment_key, last_clip = segment_source_clips[-1]
+    payload = {
+        "version": EVENT_TIME_WINDOW_CACHE_VERSION,
+        "firstSegmentKey": segment_source_clips[0][0],
+        "lastSegmentKey": last_segment_key,
+        "lastClipFileName": last_clip.name,
+        "lastClipMtimeNs": get_path_mtime_ns(last_clip),
+        "startTimestamp": time_window[0].isoformat(),
+        "endTimestamp": time_window[1].isoformat(),
+    }
+
+    cache_path = get_event_time_window_path(event_dir)
+    temp_path = cache_path.with_name(f"{cache_path.name}.tmp-{os.getpid()}")
+    temp_path.write_text(
+        json.dumps(payload, ensure_ascii=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    temp_path.replace(cache_path)
+
+
+def infer_exact_event_time_window(
+    event_dir: Path,
+    clip_files: list[Path] | None = None,
+) -> tuple[datetime, datetime] | None:
+    clip_files = clip_files if clip_files is not None else get_direct_event_clip_files(event_dir)
+    segment_source_clips = get_event_segment_source_clips(clip_files)
+    if not segment_source_clips:
+        return None
+
+    approximate_window = infer_event_time_window_from_clip_files(clip_files)
+    if approximate_window is None:
+        return None
+
+    cached_time_window = read_cached_event_time_window(event_dir, segment_source_clips)
+    if cached_time_window is not None:
+        return cached_time_window
+
+    last_segment_key, last_clip = segment_source_clips[-1]
+    last_segment_timestamp = infer_event_timestamp(last_segment_key)
+    if last_segment_timestamp is None:
+        return approximate_window
+
+    duration_seconds = get_clip_duration_seconds(last_clip)
+    if duration_seconds is None:
+        return approximate_window
+
+    exact_time_window = (
+        approximate_window[0],
+        last_segment_timestamp + timedelta(seconds=duration_seconds),
+    )
+    try:
+        write_cached_event_time_window(event_dir, segment_source_clips, exact_time_window)
+    except OSError:
+        pass
+    return exact_time_window
+
+
 def infer_event_time_window(event_dir: Path) -> tuple[datetime, datetime] | None:
     return infer_event_time_window_from_clip_files(get_direct_event_clip_files(event_dir))
+
+
+def infer_combined_event_time_window(
+    event_dir: Path,
+    *,
+    exact: bool = False,
+) -> tuple[datetime, datetime] | None:
+    event_windows: list[tuple[datetime, datetime]] = []
+    for source_event_dir in get_combined_event_directories(event_dir):
+        event_window = infer_exact_event_time_window(source_event_dir) if exact else infer_event_time_window(source_event_dir)
+        if event_window is None:
+            continue
+        event_windows.append(event_window)
+
+    if not event_windows:
+        return None
+
+    return (
+        min(window[0] for window in event_windows),
+        max(window[1] for window in event_windows),
+    )
 
 
 def is_hidden_combined_event(event_dir: Path) -> bool:
@@ -423,7 +565,7 @@ def get_combinable_event_directories(
     for event_dir in expanded_directories:
         if event_dir.parent != category_parent:
             return None, "Only consecutive clips from the same SavedClips folder can be combined."
-        event_window = infer_event_time_window(event_dir)
+        event_window = infer_exact_event_time_window(event_dir)
         if event_window is None:
             return None, f"Could not read clip timing for {event_dir.name}."
         event_windows.append((event_dir, event_window[0], event_window[1]))
@@ -437,6 +579,29 @@ def get_combinable_event_directories(
     owner_dir = ordered_windows[0][0]
     ordered_directories = [event_dir for event_dir, _, _ in ordered_windows]
     return owner_dir, ordered_directories
+
+
+def get_combine_selection_status(
+    footage_root: Path,
+    event_directories: list[Path],
+) -> dict[str, object]:
+    owner_dir, ordered_directories_or_error = get_combinable_event_directories(footage_root, event_directories)
+    if owner_dir is None:
+        return {
+            "allowed": False,
+            "error": str(ordered_directories_or_error),
+        }
+
+    ordered_directories = ordered_directories_or_error
+    return {
+        "allowed": True,
+        "error": None,
+        "ownerEventPath": str(owner_dir.relative_to(footage_root) if owner_dir != footage_root else Path(".")),
+        "orderedEventPaths": [
+            str(event_dir.relative_to(footage_root) if event_dir != footage_root else Path("."))
+            for event_dir in ordered_directories
+        ],
+    }
 
 
 def combine_event_directories(
@@ -573,7 +738,12 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     if not clip_files:
         return None
 
-    event_summary = summarize_event_dir(event_dir, footage_root, clip_files=clip_files)
+    event_summary = summarize_event_dir(
+        event_dir,
+        footage_root,
+        clip_files=clip_files,
+        time_window=infer_combined_event_time_window(event_dir, exact=True),
+    )
     if event_summary is None:
         return None
 
@@ -730,13 +900,15 @@ def summarize_event_dir(
     event_dir: Path,
     footage_root: Path,
     clip_files: list[Path] | None = None,
+    time_window: tuple[datetime, datetime] | None = None,
 ) -> EventSummary | None:
     clip_files = clip_files if clip_files is not None else get_event_clip_files(event_dir)
     if not clip_files:
         return None
 
     cameras = sorted({infer_camera_name(path.name) for path in clip_files}, key=camera_sort_key)
-    time_window = infer_event_time_window_from_clip_files(clip_files)
+    if time_window is None:
+        time_window = infer_combined_event_time_window(event_dir)
     first_segment_timestamp = time_window[0] if time_window is not None else None
     relative_path = event_dir.relative_to(footage_root) if event_dir != footage_root else Path(".")
     timestamp = infer_event_timestamp(event_dir.name)

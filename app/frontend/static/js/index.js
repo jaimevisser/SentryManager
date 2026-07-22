@@ -6,6 +6,7 @@ export function initIndexPage() {
 
 const INDEX_SELECTION_LONG_PRESS_MS = 450;
 const INDEX_SELECTION_MOVE_TOLERANCE_PX = 12;
+const COMBINE_ELIGIBILITY_DEBOUNCE_MS = 180;
 
 function initIndexSelection() {
     const cards = Array.from(document.querySelectorAll("[data-index-card]"));
@@ -26,48 +27,148 @@ function initIndexSelection() {
     let pendingPointerX = 0;
     let pendingPointerY = 0;
     let suppressNextClick = false;
+    let combineEligibilityTimer = 0;
+    let combineEligibilityAbortController = null;
+    let combineEligibilityPending = false;
+    let combineEligibilityKnown = false;
+    let combineEligibilityAllowed = false;
+    let combineEligibilitySignature = "";
+    const combineEligibilityCache = new Map();
 
     function getSelectedCards() {
         return cards.filter((card) => selectedPaths.has(card.dataset.eventPath || ""));
     }
 
-    function getCardTimestampMs(card, key) {
-        const rawValue = card.dataset[key] || "";
-        const timestamp = Date.parse(rawValue);
-        return Number.isFinite(timestamp) ? timestamp : null;
+    function getSortedSelectedPaths() {
+        return Array.from(selectedPaths).sort();
     }
 
-    function isCombinableSelection() {
+    function isPotentiallyCombinableSelection() {
         const selectedCards = getSelectedCards();
         if (selectedCards.length < 2) {
             return false;
         }
-
-        const eventWindows = [];
         for (const card of selectedCards) {
             if ((card.dataset.eventCategory || "") !== "SavedClips") {
                 return false;
             }
-
-            const startMs = getCardTimestampMs(card, "eventStartTimestamp") ?? getCardTimestampMs(card, "eventTimestamp");
-            const endMs = getCardTimestampMs(card, "eventEndTimestamp");
-            if (startMs === null || endMs === null) {
-                return false;
-            }
-
-            eventWindows.push({ startMs, endMs });
         }
-
-        eventWindows.sort((left, right) => left.startMs - right.startMs);
-        for (let index = 0; index < eventWindows.length - 1; index += 1) {
-            const currentWindow = eventWindows[index];
-            const nextWindow = eventWindows[index + 1];
-            if (Math.abs(nextWindow.startMs - currentWindow.endMs) > 1000) {
-                return false;
-            }
-        }
-
         return true;
+    }
+
+    function clearCombineEligibilityTimer() {
+        if (combineEligibilityTimer) {
+            window.clearTimeout(combineEligibilityTimer);
+        }
+        combineEligibilityTimer = 0;
+    }
+
+    function abortCombineEligibilityRequest() {
+        if (combineEligibilityAbortController) {
+            combineEligibilityAbortController.abort();
+            combineEligibilityAbortController = null;
+        }
+    }
+
+    function resetCombineEligibilityState() {
+        clearCombineEligibilityTimer();
+        abortCombineEligibilityRequest();
+        combineEligibilityPending = false;
+        combineEligibilityKnown = false;
+        combineEligibilityAllowed = false;
+        combineEligibilitySignature = "";
+    }
+
+    async function requestCombineEligibility(eventPaths, signature) {
+        if (!combineButton) {
+            return;
+        }
+
+        const cachedEligibility = combineEligibilityCache.get(signature);
+        if (cachedEligibility) {
+            combineEligibilityPending = false;
+            combineEligibilityKnown = true;
+            combineEligibilityAllowed = Boolean(cachedEligibility.allowed);
+            combineEligibilitySignature = signature;
+            syncSelectionUi();
+            return;
+        }
+
+        abortCombineEligibilityRequest();
+        const abortController = new AbortController();
+        combineEligibilityAbortController = abortController;
+        combineEligibilityPending = true;
+        combineEligibilityKnown = false;
+        combineEligibilityAllowed = false;
+        combineEligibilitySignature = signature;
+        syncSelectionUi();
+
+        try {
+            const response = await fetch(combineButton.dataset.combineEligibilityUrl || "/events/combine/eligibility", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    eventPaths,
+                }),
+                signal: abortController.signal,
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(typeof payload?.error === "string" ? payload.error : "Could not verify clip combine eligibility.");
+            }
+
+            const allowed = Boolean(payload?.allowed);
+            combineEligibilityCache.set(signature, { allowed });
+            if (combineEligibilitySignature !== signature) {
+                return;
+            }
+
+            combineEligibilityPending = false;
+            combineEligibilityKnown = true;
+            combineEligibilityAllowed = allowed;
+            combineEligibilityAbortController = null;
+            syncSelectionUi();
+        } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") {
+                return;
+            }
+            if (combineEligibilitySignature !== signature) {
+                return;
+            }
+            combineEligibilityPending = false;
+            combineEligibilityKnown = true;
+            combineEligibilityAllowed = false;
+            combineEligibilityAbortController = null;
+            syncSelectionUi();
+        }
+    }
+
+    function scheduleCombineEligibilityRefresh() {
+        if (!combineButton) {
+            return;
+        }
+
+        if (!selectionMode || deleteInFlight || combineInFlight || !isPotentiallyCombinableSelection()) {
+            resetCombineEligibilityState();
+            syncSelectionUi();
+            return;
+        }
+
+        const eventPaths = getSortedSelectedPaths();
+        const signature = eventPaths.join("\n");
+        if (combineEligibilityKnown && combineEligibilitySignature === signature) {
+            syncSelectionUi();
+            return;
+        }
+
+        clearCombineEligibilityTimer();
+        combineEligibilityTimer = window.setTimeout(() => {
+            combineEligibilityTimer = 0;
+            void requestCombineEligibility(eventPaths, signature);
+        }, COMBINE_ELIGIBILITY_DEBOUNCE_MS);
+        syncSelectionUi();
     }
 
     function syncSelectionUi() {
@@ -77,7 +178,10 @@ function initIndexSelection() {
         }
 
         const hasSelection = selectedPaths.size > 0;
-        const canCombineSelection = hasSelection && isCombinableSelection();
+        const canAttemptCombineSelection = hasSelection && isPotentiallyCombinableSelection();
+        const canCombineSelection = canAttemptCombineSelection
+            && combineEligibilityKnown
+            && combineEligibilityAllowed;
         const selectionLabel = hasSelection
             ? `Delete ${selectedPaths.size} selected ${selectedPaths.size === 1 ? "clip" : "clips"}`
             : "Delete selected clips";
@@ -92,7 +196,7 @@ function initIndexSelection() {
 
         if (combineButton) {
             combineButton.hidden = !canCombineSelection;
-            combineButton.disabled = !canCombineSelection || combineInFlight || deleteInFlight;
+            combineButton.disabled = !canCombineSelection || combineInFlight || deleteInFlight || combineEligibilityPending;
             combineButton.setAttribute("aria-label", combineLabel);
             combineButton.title = combineLabel;
         }
@@ -107,6 +211,7 @@ function initIndexSelection() {
         selectionMode = false;
         selectedPaths.clear();
         delete body.dataset.selectionMode;
+        resetCombineEligibilityState();
         syncSelectionUi();
     }
 
@@ -122,7 +227,7 @@ function initIndexSelection() {
             selectedPaths.add(eventPath);
         }
 
-        syncSelectionUi();
+        scheduleCombineEligibilityRefresh();
     }
 
     function enterSelectionMode(card) {
@@ -135,7 +240,7 @@ function initIndexSelection() {
         body.dataset.selectionMode = "true";
         selectedPaths.clear();
         selectedPaths.add(eventPath);
-        syncSelectionUi();
+        scheduleCombineEligibilityRefresh();
     }
 
     function clearPendingLongPress() {
@@ -244,6 +349,7 @@ function initIndexSelection() {
         }
 
         deleteInFlight = true;
+        resetCombineEligibilityState();
         syncSelectionUi();
 
         try {
@@ -270,11 +376,12 @@ function initIndexSelection() {
     });
 
     combineButton?.addEventListener("click", async () => {
-        if (combineInFlight || deleteInFlight || selectedPaths.size === 0 || !isCombinableSelection()) {
+        if (combineInFlight || deleteInFlight || selectedPaths.size === 0 || !combineEligibilityKnown || !combineEligibilityAllowed) {
             return;
         }
 
         combineInFlight = true;
+        resetCombineEligibilityState();
         syncSelectionUi();
 
         try {

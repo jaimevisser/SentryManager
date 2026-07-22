@@ -277,29 +277,57 @@ class FrontendAppTests(unittest.TestCase):
         self.assertEqual("SavedClips/2026-03-31_06-53-21", playlists["front"][0].source_event_path)
         self.assertEqual("SavedClips/2026-03-31_06-54-21", playlists["front"][1].source_event_path)
 
-    def test_infer_event_time_window_uses_actual_clip_duration(self) -> None:
+    def test_infer_exact_event_time_window_probes_only_last_segment_and_caches_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event_dir = Path(temp_dir) / "SavedClips" / "2026-07-21_15-44-02"
+            event_dir.mkdir(parents=True)
+            clip_files = [
+                event_dir / "2026-07-21_15-43-33-front.mp4",
+                event_dir / "2026-07-21_15-43-59-front.mp4",
+                event_dir / "2026-07-21_15-44-45-front.mp4",
+            ]
+            for clip_file in clip_files:
+                clip_file.write_bytes(b"")
+
+            with mock.patch.object(frontend_app_module, "get_clip_duration_seconds", return_value=30.8283) as duration_mock:
+                time_window = frontend_app_module.infer_exact_event_time_window(event_dir, clip_files=clip_files)
+
+            self.assertIsNotNone(time_window)
+            self.assertEqual(frontend_app_module.infer_event_timestamp("2026-07-21_15-43-33"), time_window[0])
+            self.assertEqual(frontend_app_module.infer_event_timestamp("2026-07-21_15-44-45") + frontend_app_module.timedelta(seconds=30.8283), time_window[1])
+            duration_mock.assert_called_once_with(clip_files[-1])
+            self.assertTrue((event_dir / "event-window.json").is_file())
+
+            with mock.patch.object(
+                frontend_app_module,
+                "get_clip_duration_seconds",
+                side_effect=AssertionError("duration probe should not run when cache is valid"),
+            ):
+                cached_time_window = frontend_app_module.infer_exact_event_time_window(event_dir, clip_files=clip_files)
+
+            self.assertEqual(time_window, cached_time_window)
+
+    def test_infer_event_time_window_defaults_to_segment_window_without_duration_probes(self) -> None:
         clip_files = [
             Path("2026-07-21_15-43-33-front.mp4"),
             Path("2026-07-21_15-43-59-front.mp4"),
             Path("2026-07-21_15-44-45-front.mp4"),
         ]
 
-        duration_map = {
-            "2026-07-21_15-43-33-front.mp4": 25.7406,
-            "2026-07-21_15-43-59-front.mp4": 46.1071,
-            "2026-07-21_15-44-45-front.mp4": 30.8283,
-        }
-
         with mock.patch.object(
             frontend_app_module,
             "get_clip_duration_seconds",
-            side_effect=lambda clip_file: duration_map[clip_file.name],
+            side_effect=AssertionError("duration probe should not run"),
         ):
             time_window = frontend_app_module.infer_event_time_window_from_clip_files(clip_files)
 
         self.assertIsNotNone(time_window)
         self.assertEqual(frontend_app_module.infer_event_timestamp("2026-07-21_15-43-33"), time_window[0])
-        self.assertEqual(frontend_app_module.infer_event_timestamp("2026-07-21_15-44-45") + frontend_app_module.timedelta(seconds=30.8283), time_window[1])
+        self.assertEqual(
+            frontend_app_module.infer_event_timestamp("2026-07-21_15-44-45")
+            + frontend_app_module.timedelta(seconds=frontend_app_module.COMBINE_SEGMENT_SECONDS),
+            time_window[1],
+        )
 
     def test_get_combinable_event_directories_uses_actual_clip_windows(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -336,6 +364,102 @@ class FrontendAppTests(unittest.TestCase):
 
         self.assertEqual(event_directories[0], owner_dir)
         self.assertEqual(event_directories, ordered_directories)
+
+    def test_combine_selection_status_reports_allowed_for_exact_consecutive_saved_clips(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_directories = [
+                footage_root / "SavedClips" / "2026-07-21_15-44-02",
+                footage_root / "SavedClips" / "2026-07-21_15-44-51",
+            ]
+            clip_names = [
+                "2026-07-21_15-43-33-front.mp4",
+                "2026-07-21_15-43-59-front.mp4",
+            ]
+            duration_map = {
+                "2026-07-21_15-43-33-front.mp4": 25.7406,
+                "2026-07-21_15-43-59-front.mp4": 46.1071,
+            }
+
+            for event_dir, clip_name in zip(event_directories, clip_names):
+                event_dir.mkdir(parents=True)
+                (event_dir / clip_name).write_bytes(b"")
+
+            with mock.patch.object(
+                frontend_app_module,
+                "get_clip_duration_seconds",
+                side_effect=lambda clip_file: duration_map[clip_file.name],
+            ):
+                status = frontend_app_module.get_combine_selection_status(footage_root, event_directories)
+
+        self.assertEqual(
+            {
+                "allowed": True,
+                "error": None,
+                "ownerEventPath": "SavedClips/2026-07-21_15-44-02",
+                "orderedEventPaths": [
+                    "SavedClips/2026-07-21_15-44-02",
+                    "SavedClips/2026-07-21_15-44-51",
+                ],
+            },
+            status,
+        )
+
+    def test_combine_eligibility_route_reports_disallowed_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SentryClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SentryClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                response = app.test_client().post(
+                    "/events/combine/eligibility",
+                    json={
+                        "eventPaths": [
+                            "SentryClips/2026-03-31_06-53-21",
+                            "SentryClips/2026-03-31_06-54-21",
+                        ],
+                    },
+                )
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(
+            {
+                "allowed": False,
+                "error": "Only Saved clips can be combined.",
+            },
+            response.get_json(),
+        )
+
+    def test_index_page_does_not_render_exact_window_dataset_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            event_dir.mkdir(parents=True)
+            (event_dir / "2026-03-31_06-42-49-front.mp4").write_bytes(b"")
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                response = app.test_client().get("/")
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+        self.assertEqual(200, response.status_code)
+        html = response.get_data(as_text=True)
+        self.assertIn("data-event-timestamp=", html)
+        self.assertNotIn("data-event-start-timestamp=", html)
+        self.assertNotIn("data-event-end-timestamp=", html)
 
     def test_combine_events_route_persists_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
