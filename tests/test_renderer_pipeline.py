@@ -10,6 +10,7 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw
 
 from app.renderer.pipeline import (
+    _load_route_map_overlay,
     _draw_heading_cell,
     _draw_top_right_route_overlay,
     _draw_telemetry_frame,
@@ -103,6 +104,41 @@ class RendererPipelineTests(unittest.TestCase):
 
         self.assertTrue(has_overlay)
         self.assertIsNotNone(frame.getbbox())
+
+    def test_load_route_map_overlay_uses_trimmed_selected_only_svg(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event_dir = Path(temp_dir)
+
+            with patch(
+                "app.renderer.pipeline.build_event_route_svg_from_event_dirs",
+                return_value=(
+                    '<svg data-route-projection-version="2" '
+                    'data-route-mean-lat="52" data-route-mean-lon="5" '
+                    'data-route-cos-lat="0.61" data-route-min-x="0" '
+                    'data-route-min-y="0" data-route-span="1">'
+                    '<path d="M 0 0 L 10 10" fill="none" stroke="#eef8ff" stroke-width="24"/>'
+                    '</svg>'
+                ),
+            ) as route_svg_mock:
+                with patch(
+                    "app.renderer.pipeline._render_svg_payload_to_rgba_image",
+                    return_value=Image.new("RGBA", (120, 120), (238, 248, 255, 255)),
+                ) as render_svg_mock:
+                    overlay = _load_route_map_overlay(
+                        event_dir,
+                        (0.0, 0.0, 120.0, 120.0),
+                        trim_start_time=1.5,
+                        trim_end_time=4.5,
+                    )
+
+        self.assertIsNotNone(overlay)
+        route_svg_mock.assert_called_once_with(
+            [event_dir],
+            trim_start_time=1.5,
+            trim_end_time=4.5,
+            mode="selected-only",
+        )
+        render_svg_mock.assert_called_once()
 
     def test_draw_telemetry_frame_renders_route_map_in_top_right_safe_zone(self) -> None:
         route_map = Image.new("RGBA", (120, 120), (238, 248, 255, 230))

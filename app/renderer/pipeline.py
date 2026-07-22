@@ -16,7 +16,7 @@ import tempfile
 
 from PIL import Image, ImageDraw, ImageFont
 
-from ..sei import COLUMN_DEFINITIONS, EVENT_ROUTE_SVG_NAME, FORMAT_MAGIC, FORMAT_VERSION, HEADER_SIZE
+from ..sei import COLUMN_DEFINITIONS, FORMAT_MAGIC, FORMAT_VERSION, HEADER_SIZE, build_event_route_svg_from_event_dirs
 
 
 CAMERA_ORDER = (
@@ -444,6 +444,7 @@ def render_event(
     segment_outputs = _render_plan_segments(
         render_plan=render_plan,
         event_dir=event_dir,
+        player_edits=player_edits,
         event_driver_assist_display=event_driver_assist_display,
         event_base_timestamp=event_base_timestamp,
         event_location_label=event_location_label,
@@ -490,6 +491,7 @@ def _prepare_render_plan_outputs(render_plan: dict[str, object]) -> None:
 def _render_plan_segments(
     render_plan: dict[str, object],
     event_dir: Path,
+    player_edits: dict[str, object] | None,
     event_driver_assist_display: dict[str, object] | None,
     event_base_timestamp: datetime | None,
     event_location_label: str | None,
@@ -502,6 +504,7 @@ def _render_plan_segments(
         _render_segment(
             segment=segment,
             event_dir=event_dir,
+            player_edits=player_edits,
             event_driver_assist_display=event_driver_assist_display,
             event_base_timestamp=event_base_timestamp,
             event_location_label=event_location_label,
@@ -841,6 +844,7 @@ def _resolve_fragments(
 def _render_segment(
     segment: dict[str, object],
     event_dir: Path,
+    player_edits: dict[str, object] | None,
     event_driver_assist_display: dict[str, object] | None,
     event_base_timestamp: datetime | None,
     event_location_label: str | None,
@@ -963,6 +967,7 @@ def _render_segment(
     overlay_created = _render_segment_telemetry_overlay(
         segment=segment,
         event_dir=event_dir,
+        player_edits=player_edits,
         event_driver_assist_display=event_driver_assist_display,
         event_base_timestamp=event_base_timestamp,
         event_location_label=event_location_label,
@@ -1010,6 +1015,7 @@ def _render_segment(
 def _render_segment_telemetry_overlay(
     segment: dict[str, object],
     event_dir: Path,
+    player_edits: dict[str, object] | None,
     event_driver_assist_display: dict[str, object] | None,
     event_base_timestamp: datetime | None,
     event_location_label: str | None,
@@ -1023,7 +1029,14 @@ def _render_segment_telemetry_overlay(
         return False
 
     safe_zones = _get_safe_zone_rects(segment, frame_size, media_clips_by_path)
-    route_map_overlay = _load_route_map_overlay(event_dir, safe_zones.get("topRight"))
+    trim_start_time = _coerce_nonnegative_float(player_edits.get("trimStartTime")) if isinstance(player_edits, dict) else None
+    trim_end_time = _coerce_nonnegative_float(player_edits.get("trimEndTime")) if isinstance(player_edits, dict) else None
+    route_map_overlay = _load_route_map_overlay(
+        event_dir,
+        safe_zones.get("topRight"),
+        trim_start_time=trim_start_time,
+        trim_end_time=trim_end_time,
+    )
     if (
         safe_zones["left"] is None
         and safe_zones["right"] is None
@@ -1403,6 +1416,8 @@ def _get_route_canvas_contain_rect(width: int, height: int) -> tuple[float, floa
 def _load_route_map_overlay(
     event_dir: Path,
     top_right_safe_zone: tuple[float, float, float, float] | None,
+    trim_start_time: float | None = None,
+    trim_end_time: float | None = None,
 ) -> dict[str, object] | None:
     if top_right_safe_zone is None:
         return None
@@ -1413,20 +1428,20 @@ def _load_route_map_overlay(
     if target_width < 1 or target_height < 1:
         return None
 
-    route_svg_path = event_dir / EVENT_ROUTE_SVG_NAME
-    if not route_svg_path.is_file():
-        return None
-
-    try:
-        svg_payload = route_svg_path.read_text(encoding="utf-8")
-    except OSError:
+    svg_payload = build_event_route_svg_from_event_dirs(
+        _get_event_source_directories(event_dir),
+        trim_start_time=trim_start_time,
+        trim_end_time=trim_end_time,
+        mode="selected-only",
+    )
+    if not svg_payload:
         return None
 
     projection = _parse_route_projection(svg_payload)
     if projection is None:
         return None
 
-    route_map_image = _render_svg_to_rgba_image(route_svg_path, target_width, target_height)
+    route_map_image = _render_svg_payload_to_rgba_image(svg_payload, target_width, target_height)
     if route_map_image is None:
         return None
 
@@ -1507,6 +1522,23 @@ def _render_svg_to_rgba_image(svg_path: Path, width: int, height: int) -> Image.
     if image.size != (width, height):
         image = image.resize((width, height), Image.Resampling.LANCZOS)
     return image
+
+
+def _render_svg_payload_to_rgba_image(svg_payload: str, width: int, height: int) -> Image.Image | None:
+    if not svg_payload.strip():
+        return None
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".svg", encoding="utf-8", delete=False) as temp_svg:
+        temp_svg.write(svg_payload)
+        temp_svg_path = Path(temp_svg.name)
+
+    try:
+        return _render_svg_to_rgba_image(temp_svg_path, width, height)
+    finally:
+        try:
+            temp_svg_path.unlink()
+        except OSError:
+            pass
 
 
 def _draw_left_safe_zone(

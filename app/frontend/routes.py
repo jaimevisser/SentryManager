@@ -4,10 +4,21 @@ from pathlib import Path
 from types import ModuleType
 import shutil
 
-from flask import Flask, abort, jsonify, render_template, request, send_file
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 
 
 def register_routes(app: Flask, frontend_module: ModuleType) -> None:
+    def parse_nonnegative_float_arg(raw_value: str | None) -> float | None:
+        if raw_value is None or not raw_value.strip():
+            return None
+        try:
+            value = float(raw_value)
+        except ValueError:
+            abort(400)
+        if value < 0:
+            abort(400)
+        return value
+
     @app.route("/event-thumbnails/<path:event_path>")
     def event_thumbnail(event_path: str):
         footage_root = frontend_module.get_footage_root(app)
@@ -46,6 +57,21 @@ def register_routes(app: Flask, frontend_module: ModuleType) -> None:
     def event_route_svg_combined(event_path: str):
         footage_root = frontend_module.get_footage_root(app)
         event_dir = frontend_module.require_event_dir(footage_root, event_path)
+
+        trim_start_time = parse_nonnegative_float_arg(request.args.get("trimStartTime"))
+        trim_end_time = parse_nonnegative_float_arg(request.args.get("trimEndTime"))
+        mode = request.args.get("mode") or "highlight"
+
+        if trim_start_time is not None or trim_end_time is not None or mode != "highlight":
+            route_svg = frontend_module.build_event_route_svg_content(
+                event_dir,
+                trim_start_time=trim_start_time,
+                trim_end_time=trim_end_time,
+                mode=mode,
+            )
+            if route_svg is None:
+                abort(404)
+            return Response(route_svg, mimetype="image/svg+xml")
 
         route_svg_file = frontend_module.get_event_route_svg_path(event_dir)
         if not route_svg_file.is_file() or not frontend_module._is_within_root(route_svg_file, footage_root):

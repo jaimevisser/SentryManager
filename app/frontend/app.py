@@ -24,6 +24,7 @@ from ..renderer import (
     start_render_worker_thread,
 )
 from ..sei import (
+    build_event_route_svg_from_event_dirs,
     rebuild_event_route_svg_from_event_dirs,
     ensure_sei_sidecars,
     event_needs_route_backfill,
@@ -525,6 +526,22 @@ def persist_normalized_edit_segments(
         write_event_processing_state(event_dir, event_processing_state)
     except OSError:
         pass
+
+
+def build_event_route_svg_content(
+    event_dir: Path,
+    trim_start_time: float | None = None,
+    trim_end_time: float | None = None,
+    *,
+    mode: str = "highlight",
+) -> str | None:
+    route_mode = mode if mode in {"highlight", "selected-only"} else "highlight"
+    return build_event_route_svg_from_event_dirs(
+        get_combined_event_directories(event_dir),
+        trim_start_time=trim_start_time,
+        trim_end_time=trim_end_time,
+        mode=route_mode,
+    )
 
 
 def build_playlist_payload(

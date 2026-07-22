@@ -29,7 +29,7 @@ export function createEventPlayerHudController({
     eventHasAutopilotActivity,
     eventHasSteeringAngleData,
     eventDriverAssistDisplay,
-    eventRouteSvgUrl,
+    getRouteSvgUrl,
     speedNode,
     blinkerLeftNode,
     headingIndicatorNode,
@@ -302,7 +302,7 @@ export function createEventPlayerHudController({
                 return;
             }
 
-            const nextRouteSvgUrl = eventRouteSvgUrl;
+            const nextRouteSvgUrl = typeof getRouteSvgUrl === "function" ? getRouteSvgUrl() : null;
 
             if (!nextRouteSvgUrl) {
                 routeMapNode.hidden = true;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import math
 import os
@@ -108,8 +109,15 @@ class SegmentTelemetryResult:
     route_points: list[tuple[float, float]] | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TimedRoutePoint:
+    time_ms: int
+    latitude: float
+    longitude: float
+
+
 def get_sei_sidecar_path(clip_file: Path) -> Path:
-    return clip_file.with_suffix(SEI_SIDECAR_SUFFIX)
+    return clip_file.with_name(f"{clip_file.stem}{SEI_SIDECAR_SUFFIX}")
 
 
 def get_segment_sei_sidecar_path(event_dir: Path, segment_key: str) -> Path:
@@ -124,7 +132,56 @@ def get_event_route_svg_path(event_dir: Path) -> Path:
     return event_dir / EVENT_ROUTE_SVG_NAME
 
 
-def rebuild_event_route_svg_from_event_dirs(target_event_dir: Path, source_event_dirs: list[Path]) -> bool:
+def build_event_route_svg_from_event_dirs(
+    source_event_dirs: list[Path],
+    trim_start_time: float | None = None,
+    trim_end_time: float | None = None,
+    *,
+    mode: str = "highlight",
+) -> str | None:
+    timed_points = collect_event_timed_route_points_from_event_dirs(source_event_dirs)
+    return build_route_svg_from_timed_points(
+        timed_points,
+        trim_start_time=trim_start_time,
+        trim_end_time=trim_end_time,
+        mode=mode,
+    )
+
+
+def collect_event_timed_route_points_from_event_dirs(source_event_dirs: list[Path]) -> list[TimedRoutePoint]:
+    segment_source_clips = _collect_segment_source_clips(source_event_dirs)
+    segment_timestamps = [
+        infer_event_timestamp(segment_key)
+        for segment_key, _ in segment_source_clips
+    ]
+    valid_timestamps = [timestamp for timestamp in segment_timestamps if timestamp is not None]
+    if not valid_timestamps:
+        return []
+
+    first_timestamp = min(valid_timestamps)
+    flattened_points: list[TimedRoutePoint] = []
+    previous_coordinates: tuple[float, float] | None = None
+    for segment_key, source_clip in segment_source_clips:
+        segment_timestamp = infer_event_timestamp(segment_key)
+        if segment_timestamp is None:
+            continue
+        segment_offset_ms = int(round((segment_timestamp - first_timestamp).total_seconds() * 1000))
+        for point in _load_clip_timed_route_points(source_clip):
+            coordinates = (point.latitude, point.longitude)
+            if previous_coordinates == coordinates:
+                continue
+            previous_coordinates = coordinates
+            flattened_points.append(
+                TimedRoutePoint(
+                    time_ms=max(0, segment_offset_ms + point.time_ms),
+                    latitude=point.latitude,
+                    longitude=point.longitude,
+                )
+            )
+    return flattened_points
+
+
+def _collect_segment_source_clips(source_event_dirs: list[Path]) -> list[tuple[str, Path]]:
     segment_source_clips: dict[str, Path] = {}
     for source_event_dir in source_event_dirs:
         segment_camera_files: dict[str, dict[str, Path]] = {}
@@ -142,9 +199,24 @@ def rebuild_event_route_svg_from_event_dirs(target_event_dir: Path, source_event
                 continue
             segment_source_clips[segment_key] = source_clip
 
+    return sorted(segment_source_clips.items(), key=lambda item: item[0])
+
+
+def _load_clip_timed_route_points(source_clip: Path) -> list[TimedRoutePoint]:
+    sidecar_path = get_sei_sidecar_path(source_clip)
+    if sidecar_path.is_file():
+        samples = load_serialized_sei_samples(sidecar_path)
+    else:
+        try:
+            samples, _ = extract_sei_samples(source_clip.read_bytes())
+        except (OSError, ValueError, struct.error):
+            return []
+    return extract_timed_gps_points(samples)
+
+
+def rebuild_event_route_svg_from_event_dirs(target_event_dir: Path, source_event_dirs: list[Path]) -> bool:
     flattened_points: list[tuple[float, float]] = []
-    for segment_key in sorted(segment_source_clips):
-        source_clip = segment_source_clips[segment_key]
+    for _, source_clip in _collect_segment_source_clips(source_event_dirs):
         try:
             (_, _, _, _, _, _, _, route_points) = build_sei_sidecar_payload(source_clip)
         except (OSError, ValueError, struct.error):
@@ -451,6 +523,74 @@ def build_route_svg_content(samples: list[SeiSample]) -> str | None:
     return build_route_svg_from_gps_points(gps_points)
 
 
+def build_route_svg_from_timed_points(
+    timed_points: list[TimedRoutePoint],
+    trim_start_time: float | None = None,
+    trim_end_time: float | None = None,
+    *,
+    mode: str = "highlight",
+) -> str | None:
+    if len(timed_points) < 2:
+        return None
+
+    all_gps_points = [(point.latitude, point.longitude) for point in timed_points]
+    projected_points, projection = project_points(all_gps_points)
+    if len(projected_points) < 2:
+        return None
+
+    bounds = calculate_normalization_bounds(projected_points)
+    if bounds is None:
+        return None
+
+    normalized_all_points = _normalize_route_polyline(projected_points, bounds)
+    if len(normalized_all_points) < 2:
+        return None
+
+    selected_points = _select_route_points_for_time_bounds(timed_points, trim_start_time, trim_end_time)
+    normalized_selected_points: list[tuple[float, float]] = []
+    if len(selected_points) >= 2:
+        selected_projected_points = [
+            ((longitude - projection["mean_lon"]) * projection["cos_lat"], latitude - projection["mean_lat"])
+            for latitude, longitude in selected_points
+        ]
+        normalized_selected_points = _normalize_route_polyline(selected_projected_points, bounds)
+
+    path_segments = []
+    if mode == "selected-only":
+        if len(normalized_selected_points) < 2:
+            return None
+        path_segments.append(
+            '<path d="'
+            + build_svg_path_d(normalized_selected_points)
+            + '" fill="none" stroke="#eef8ff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>'
+        )
+    else:
+        path_segments.append(
+            '<path d="'
+            + build_svg_path_d(normalized_all_points)
+            + '" fill="none" stroke="#6f7782" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>'
+        )
+        if len(normalized_selected_points) >= 2:
+            path_segments.append(
+                '<path d="'
+                + build_svg_path_d(normalized_selected_points)
+                + '" fill="none" stroke="#eef8ff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>'
+            )
+
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" '
+        'data-route-projection-version="2" '
+        f'data-route-mean-lat="{format_projection_float(projection["mean_lat"])}" '
+        f'data-route-mean-lon="{format_projection_float(projection["mean_lon"])}" '
+        f'data-route-cos-lat="{format_projection_float(projection["cos_lat"])}" '
+        f'data-route-min-x="{format_projection_float(bounds["min_x"])}" '
+        f'data-route-min-y="{format_projection_float(bounds["min_y"])}" '
+        f'data-route-span="{format_projection_float(bounds["span"])}">'
+        + "".join(path_segments)
+        + "</svg>"
+    )
+
+
 def build_route_svg_from_gps_points(gps_points: list[tuple[float, float]]) -> str | None:
     if len(gps_points) < 2:
         return None
@@ -505,6 +645,28 @@ def extract_gps_points(samples: list[SeiSample]) -> list[tuple[float, float]]:
             continue
         previous = key
         points.append((sample.latitude_e7 / 10_000_000, sample.longitude_e7 / 10_000_000))
+    return points
+
+
+def extract_timed_gps_points(samples: list[SeiSample]) -> list[TimedRoutePoint]:
+    points: list[TimedRoutePoint] = []
+    previous: tuple[int, int] | None = None
+    for sample in samples:
+        if not (sample.presence_bits & (1 << FIELD_LATITUDE)):
+            continue
+        if not (sample.presence_bits & (1 << FIELD_LONGITUDE)):
+            continue
+        key = (sample.latitude_e7, sample.longitude_e7)
+        if previous == key:
+            continue
+        previous = key
+        points.append(
+            TimedRoutePoint(
+                time_ms=max(0, int(sample.time_ms)),
+                latitude=sample.latitude_e7 / 10_000_000,
+                longitude=sample.longitude_e7 / 10_000_000,
+            )
+        )
     return points
 
 
@@ -642,6 +804,85 @@ def normalize_points_with_bounds(points: list[tuple[float, float]], bounds: dict
         ny = padding + (((y - min_y) / span) * drawable)
         normalized.append((nx, canvas_size - ny))
     return normalized
+
+
+def _normalize_route_polyline(
+    projected_points: list[tuple[float, float]],
+    bounds: dict[str, float],
+) -> list[tuple[float, float]]:
+    filtered_points = drop_nearby_points(projected_points)
+    if len(filtered_points) < 2:
+        return []
+
+    simplified_points = rdp_simplify(filtered_points)
+    if len(simplified_points) < 2:
+        return []
+
+    return normalize_points_with_bounds(simplified_points, bounds)
+
+
+def _select_route_points_for_time_bounds(
+    timed_points: list[TimedRoutePoint],
+    trim_start_time: float | None,
+    trim_end_time: float | None,
+) -> list[tuple[float, float]]:
+    if len(timed_points) < 2:
+        return []
+
+    if trim_start_time is None or trim_end_time is None:
+        return [(point.latitude, point.longitude) for point in timed_points]
+
+    start_ms = max(0, int(round(trim_start_time * 1000)))
+    end_ms = max(0, int(round(trim_end_time * 1000)))
+    if end_ms <= start_ms:
+        return []
+
+    selected_points: list[tuple[float, float]] = []
+
+    def append_point(latitude: float, longitude: float) -> None:
+        coordinates = (latitude, longitude)
+        if selected_points and selected_points[-1] == coordinates:
+            return
+        selected_points.append(coordinates)
+
+    for index, current_point in enumerate(timed_points[:-1]):
+        next_point = timed_points[index + 1]
+        current_time_ms = current_point.time_ms
+        next_time_ms = next_point.time_ms
+        if next_time_ms < start_ms or current_time_ms > end_ms:
+            continue
+
+        if current_time_ms <= start_ms <= next_time_ms:
+            start_point = _interpolate_route_point(current_point, next_point, start_ms)
+            append_point(start_point[0], start_point[1])
+        elif start_ms <= current_time_ms <= end_ms:
+            append_point(current_point.latitude, current_point.longitude)
+
+        if start_ms <= next_time_ms <= end_ms:
+            append_point(next_point.latitude, next_point.longitude)
+
+        if current_time_ms <= end_ms <= next_time_ms:
+            end_point = _interpolate_route_point(current_point, next_point, end_ms)
+            append_point(end_point[0], end_point[1])
+            break
+
+    return selected_points
+
+
+def _interpolate_route_point(
+    start_point: TimedRoutePoint,
+    end_point: TimedRoutePoint,
+    target_time_ms: int,
+) -> tuple[float, float]:
+    time_span = end_point.time_ms - start_point.time_ms
+    if time_span <= 0:
+        return (start_point.latitude, start_point.longitude)
+
+    ratio = (target_time_ms - start_point.time_ms) / time_span
+    ratio = max(0.0, min(1.0, ratio))
+    latitude = start_point.latitude + ((end_point.latitude - start_point.latitude) * ratio)
+    longitude = start_point.longitude + ((end_point.longitude - start_point.longitude) * ratio)
+    return latitude, longitude
 
 
 def build_svg_path_d(points: list[tuple[float, float]]) -> str:
@@ -1114,3 +1355,10 @@ def split_clip_stem(stem: str) -> tuple[str, str]:
         if normalized_stem.endswith(suffix):
             return normalized_stem[: -len(suffix)], camera_key
     return normalized_stem, "unknown"
+
+
+def infer_event_timestamp(name: str) -> datetime | None:
+    try:
+        return datetime.strptime(name, "%Y-%m-%d_%H-%M-%S")
+    except ValueError:
+        return None

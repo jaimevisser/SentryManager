@@ -7,6 +7,8 @@ import unittest
 from unittest import mock
 
 from app.sei import (
+    TimedRoutePoint,
+    build_route_svg_from_timed_points,
     build_route_svg_from_gps_points,
     calculate_driver_assist_display,
     ensure_event_processing_marker,
@@ -35,6 +37,38 @@ class SeiTests(unittest.TestCase):
         self.assertIn("data-route-min-x", svg)
         self.assertIn("data-route-min-y", svg)
         self.assertIn("data-route-span", svg)
+
+    def test_build_route_svg_from_timed_points_highlights_selected_range(self) -> None:
+        svg = build_route_svg_from_timed_points(
+            [
+                TimedRoutePoint(time_ms=0, latitude=52.0, longitude=5.0),
+                TimedRoutePoint(time_ms=1000, latitude=52.0001, longitude=5.0001),
+                TimedRoutePoint(time_ms=2000, latitude=52.0002, longitude=5.0002),
+            ],
+            trim_start_time=0.5,
+            trim_end_time=1.5,
+            mode="highlight",
+        )
+
+        self.assertIsNotNone(svg)
+        self.assertIn('stroke="#6f7782"', svg)
+        self.assertIn('stroke="#eef8ff"', svg)
+
+    def test_build_route_svg_from_timed_points_selected_only_omits_unselected_path(self) -> None:
+        svg = build_route_svg_from_timed_points(
+            [
+                TimedRoutePoint(time_ms=0, latitude=52.0, longitude=5.0),
+                TimedRoutePoint(time_ms=1000, latitude=52.0001, longitude=5.0001),
+                TimedRoutePoint(time_ms=2000, latitude=52.0002, longitude=5.0002),
+            ],
+            trim_start_time=0.5,
+            trim_end_time=1.5,
+            mode="selected-only",
+        )
+
+        self.assertIsNotNone(svg)
+        self.assertNotIn('stroke="#6f7782"', svg)
+        self.assertIn('stroke="#eef8ff"', svg)
 
     def test_calculate_driver_assist_display_prefers_self_driving(self) -> None:
         display = calculate_driver_assist_display(

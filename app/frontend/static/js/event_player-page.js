@@ -399,7 +399,23 @@ export function initEventPlayer() {
         eventHasAutopilotActivity,
         eventHasSteeringAngleData,
         eventDriverAssistDisplay,
-        eventRouteSvgUrl,
+        getRouteSvgUrl: () => {
+            if (!eventRouteSvgUrl) {
+                return null;
+            }
+
+            const trimStartTime = getTrimStartTime();
+            const trimEndTime = getTrimEndTime();
+            if (!(trimEndTime > trimStartTime)) {
+                return eventRouteSvgUrl;
+            }
+
+            const routeUrl = new URL(eventRouteSvgUrl, window.location.href);
+            routeUrl.searchParams.set("trimStartTime", String(normalizePersistedTime(trimStartTime)));
+            routeUrl.searchParams.set("trimEndTime", String(normalizePersistedTime(trimEndTime)));
+            routeUrl.searchParams.set("mode", "highlight");
+            return routeUrl.toString();
+        },
         speedNode,
         blinkerLeftNode,
         headingIndicatorNode,

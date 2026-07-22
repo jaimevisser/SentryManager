@@ -103,6 +103,38 @@ class FrontendAppTests(unittest.TestCase):
         self.assertEqual("First line\nSecond line", saved_notes)
         self.assertNotIn("notes", saved_state.get("playerEdits", {}))
 
+    def test_combined_route_svg_endpoint_renders_trimmed_highlight_svg(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            event_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            event_dir.mkdir(parents=True)
+            (event_dir / "route-combined.svg").write_text("<svg></svg>", encoding="utf-8")
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                with mock.patch.object(
+                    frontend_app_module,
+                    "build_event_route_svg_content",
+                    return_value='<svg><path stroke="#6f7782"/><path stroke="#eef8ff"/></svg>',
+                ) as route_svg_mock:
+                    response = app.test_client().get(
+                        "/event-route-svg-combined/SavedClips/2026-03-31_06-53-21?trimStartTime=1.5&trimEndTime=4.5&mode=highlight"
+                    )
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("image/svg+xml; charset=utf-8", response.content_type)
+        self.assertIn('stroke="#6f7782"', response.get_data(as_text=True))
+        route_svg_mock.assert_called_once_with(
+            event_dir,
+            trim_start_time=1.5,
+            trim_end_time=4.5,
+            mode="highlight",
+        )
+
     def test_player_edits_route_uses_combined_owner_folder_for_notes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             footage_root = Path(temp_dir) / "TeslaCam"
