@@ -571,6 +571,50 @@ class FrontendAppTests(unittest.TestCase):
         self.assertEqual(1, owner_state["combinedEvent"]["routeSvgVersion"])
         rebuild_mock.assert_called_once_with(owner_dir, [owner_dir, child_dir])
 
+    def test_combined_owner_event_page_aggregates_driver_assist_display(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-31_06-53-21"
+            child_dir = footage_root / "SavedClips" / "2026-03-31_06-54-21"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            (owner_dir / "2026-03-31_06-53-21-front.mp4").write_bytes(b"")
+            (child_dir / "2026-03-31_06-54-21-front.mp4").write_bytes(b"")
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "combinedEvent": {"memberClipNames": [child_dir.name]},
+                        "autopilotObservedDurationMs": 1000,
+                        "autopilotActiveDurationMs": 1000,
+                        "selfDrivingDurationMs": 1000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "combinedIntoClipName": owner_dir.name,
+                        "autopilotObservedDurationMs": 1000,
+                        "autopilotActiveDurationMs": 0,
+                        "selfDrivingDurationMs": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            app = frontend_app_module.app
+            previous_root = app.config["TESLACAM_ROOT"]
+            app.config["TESLACAM_ROOT"] = str(footage_root)
+            try:
+                with mock.patch.object(frontend_app_module, "queue_event_processing"):
+                    response = app.test_client().get("/events/SavedClips/2026-03-31_06-53-21")
+            finally:
+                app.config["TESLACAM_ROOT"] = previous_root
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("FSD 50%", response.get_data(as_text=True))
+
     def test_uncombine_event_directory_clears_combined_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             footage_root = Path(temp_dir) / "TeslaCam"

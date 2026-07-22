@@ -16,7 +16,14 @@ import tempfile
 
 from PIL import Image, ImageDraw, ImageFont
 
-from ..sei import COLUMN_DEFINITIONS, FORMAT_MAGIC, FORMAT_VERSION, HEADER_SIZE, build_event_route_svg_from_event_dirs
+from ..sei import (
+    COLUMN_DEFINITIONS,
+    FORMAT_MAGIC,
+    FORMAT_VERSION,
+    HEADER_SIZE,
+    build_event_route_svg_from_event_dirs,
+    calculate_combined_driver_assist_display,
+)
 
 
 CAMERA_ORDER = (
@@ -437,8 +444,8 @@ def render_event(
     event_payload = _load_event_payload(event_dir)
     event_base_timestamp = _get_event_base_timestamp(event_payload, event_dir)
     event_location_label = _get_event_location_label(event_payload)
-    event_processing_state = _load_event_processing_state(event_dir)
-    event_driver_assist_display = _get_event_driver_assist_display(event_processing_state)
+    event_processing_states = [_load_event_processing_state(source_event_dir) for source_event_dir in _get_event_source_directories(event_dir)]
+    event_driver_assist_display = calculate_combined_driver_assist_display(event_processing_states)
 
     intermediate_dir = Path(render_plan["intermediateDir"])
     segment_outputs = _render_plan_segments(
@@ -1611,28 +1618,7 @@ def _draw_right_safe_zone(
 
 
 def _get_event_driver_assist_display(event_processing_state: dict[str, object]) -> dict[str, object] | None:
-    raw_display = event_processing_state.get("driverAssistDisplay")
-    if isinstance(raw_display, dict):
-        raw_label = raw_display.get("label")
-        raw_percent = raw_display.get("percent")
-        raw_text = raw_display.get("text")
-        if isinstance(raw_label, str) and raw_label in {"FSD", "AP"} and isinstance(raw_percent, int | float):
-            percent = _coerce_optional_percentage(raw_percent)
-            if percent is not None:
-                return {
-                    "label": raw_label,
-                    "percent": percent,
-                    "text": raw_text if isinstance(raw_text, str) and raw_text.strip() else f"{raw_label} {round(percent)}%",
-                }
-
-    legacy_fsd_on_percent = _coerce_optional_percentage(event_processing_state.get("fsdOnPercent"))
-    if legacy_fsd_on_percent is None:
-        return None
-    return {
-        "label": "FSD",
-        "percent": legacy_fsd_on_percent,
-        "text": f"FSD {round(legacy_fsd_on_percent)}%",
-    }
+    return calculate_combined_driver_assist_display([event_processing_state])
 
 
 def _draw_heading_cell(

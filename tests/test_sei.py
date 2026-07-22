@@ -114,12 +114,18 @@ class SeiTests(unittest.TestCase):
                 has_autopilot_activity=True,
                 has_steering_angle_data=False,
                 driver_assist_display={"label": "AP", "percent": 75.0, "text": "AP 75%"},
+                autopilot_observed_duration_ms=1200,
+                autopilot_active_duration_ms=900,
+                self_driving_duration_ms=0,
             )
 
             payload = json.loads(marker_path.read_text(encoding="utf-8"))
 
         self.assertEqual("keep", payload["custom"])
         self.assertEqual({"label": "AP", "percent": 75.0, "text": "AP 75%"}, payload["driverAssistDisplay"])
+        self.assertEqual(1200, payload["autopilotObservedDurationMs"])
+        self.assertEqual(900, payload["autopilotActiveDurationMs"])
+        self.assertEqual(0, payload["selfDrivingDurationMs"])
         self.assertNotIn("fsdOnPercent", payload)
 
     def test_ensure_sei_sidecars_skips_rebuild_when_sidecars_and_marker_exist(self) -> None:
@@ -135,6 +141,9 @@ class SeiTests(unittest.TestCase):
                         "hasAutopilotActivity": True,
                         "hasSteeringAngleData": True,
                         "eventCategoryLabel": "Saved",
+                        "autopilotObservedDurationMs": 1000,
+                        "autopilotActiveDurationMs": 1000,
+                        "selfDrivingDurationMs": 0,
                         "driverAssistDisplay": {"label": "AP", "percent": 100.0, "text": "AP 100%"},
                     }
                 ),

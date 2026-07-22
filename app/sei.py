@@ -13,6 +13,9 @@ SEI_SIDECAR_SUFFIX = "-telemetry.sei.bin"
 ROUTE_SVG_SUFFIX = "-route.svg"
 EVENT_ROUTE_SVG_NAME = "route-combined.svg"
 PROCESSING_MARKER_NAME = "sentrymanager.json"
+AUTOPILOT_OBSERVED_DURATION_MS_KEY = "autopilotObservedDurationMs"
+AUTOPILOT_ACTIVE_DURATION_MS_KEY = "autopilotActiveDurationMs"
+SELF_DRIVING_DURATION_MS_KEY = "selfDrivingDurationMs"
 PRIMARY_CAMERA_KEY = "front"
 CAMERA_KEYS = (
     "front",
@@ -262,6 +265,31 @@ def event_needs_route_backfill(event_dir: Path) -> bool:
     return False
 
 
+def event_needs_processing_marker_backfill(event_dir: Path) -> bool:
+    marker_path = get_event_processing_marker_path(event_dir)
+    if not marker_path.is_file():
+        return True
+
+    try:
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+
+    if not isinstance(payload, dict):
+        return True
+
+    for key in (
+        AUTOPILOT_OBSERVED_DURATION_MS_KEY,
+        AUTOPILOT_ACTIVE_DURATION_MS_KEY,
+        SELF_DRIVING_DURATION_MS_KEY,
+    ):
+        value = payload.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            return True
+
+    return False
+
+
 def route_svg_has_projection_metadata(route_svg_path: Path) -> bool:
     try:
         payload = route_svg_path.read_text(encoding="utf-8")
@@ -334,7 +362,7 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
     pending_event_dirs: set[Path] = set()
     for event_dir, segment_key in segments:
         marker_exists = get_event_processing_marker_path(event_dir).is_file()
-        if (not marker_exists) or event_needs_route_backfill(event_dir):
+        if (not marker_exists) or event_needs_route_backfill(event_dir) or event_needs_processing_marker_backfill(event_dir):
             pending_event_dirs.add(event_dir)
 
     for (event_dir, segment_key), camera_files in segments.items():
@@ -386,6 +414,9 @@ def ensure_sei_sidecars(clip_files: list[Path]) -> None:
                     event_autopilot_observed_duration_ms.get(event_dir, 0),
                     event_self_driving_duration_ms.get(event_dir, 0),
                 ),
+                autopilot_observed_duration_ms=event_autopilot_observed_duration_ms.get(event_dir, 0),
+                autopilot_active_duration_ms=event_autopilot_active_duration_ms.get(event_dir, 0),
+                self_driving_duration_ms=event_self_driving_duration_ms.get(event_dir, 0),
             )
         except OSError:
             continue
@@ -450,6 +481,9 @@ def ensure_event_processing_marker(
     has_autopilot_activity: bool,
     has_steering_angle_data: bool,
     driver_assist_display: dict[str, object] | None,
+    autopilot_observed_duration_ms: int = 0,
+    autopilot_active_duration_ms: int = 0,
+    self_driving_duration_ms: int = 0,
 ) -> Path:
     marker_path = get_event_processing_marker_path(event_dir)
     event_payload = load_event_json_payload(event_dir)
@@ -466,6 +500,9 @@ def ensure_event_processing_marker(
     marker_payload_value["hasAutopilotActivity"] = has_autopilot_activity
     marker_payload_value["hasSteeringAngleData"] = has_steering_angle_data
     marker_payload_value["eventCategoryLabel"] = event_category_label
+    marker_payload_value[AUTOPILOT_OBSERVED_DURATION_MS_KEY] = max(0, int(autopilot_observed_duration_ms))
+    marker_payload_value[AUTOPILOT_ACTIVE_DURATION_MS_KEY] = max(0, int(autopilot_active_duration_ms))
+    marker_payload_value[SELF_DRIVING_DURATION_MS_KEY] = max(0, int(self_driving_duration_ms))
     if driver_assist_display is not None:
         marker_payload_value["driverAssistDisplay"] = driver_assist_display
         if driver_assist_display.get("label") == "FSD":
@@ -1002,6 +1039,98 @@ def calculate_driver_assist_display(
             "percent": percent,
             "text": f"AP {round(percent)}%",
         }
+
+    return None
+
+
+def get_driver_assist_display_from_processing_state(event_processing_state: dict[str, object]) -> dict[str, object] | None:
+    raw_observed_duration_ms = event_processing_state.get(AUTOPILOT_OBSERVED_DURATION_MS_KEY)
+    raw_active_duration_ms = event_processing_state.get(AUTOPILOT_ACTIVE_DURATION_MS_KEY)
+    raw_self_driving_duration_ms = event_processing_state.get(SELF_DRIVING_DURATION_MS_KEY)
+    if (
+        isinstance(raw_observed_duration_ms, int)
+        and not isinstance(raw_observed_duration_ms, bool)
+        and raw_observed_duration_ms >= 0
+        and isinstance(raw_active_duration_ms, int)
+        and not isinstance(raw_active_duration_ms, bool)
+        and raw_active_duration_ms >= 0
+        and isinstance(raw_self_driving_duration_ms, int)
+        and not isinstance(raw_self_driving_duration_ms, bool)
+        and raw_self_driving_duration_ms >= 0
+    ):
+        return calculate_driver_assist_display(
+            raw_active_duration_ms,
+            raw_observed_duration_ms,
+            raw_self_driving_duration_ms,
+        )
+
+    raw_display = event_processing_state.get("driverAssistDisplay")
+    if isinstance(raw_display, dict):
+        raw_label = raw_display.get("label")
+        raw_percent = raw_display.get("percent")
+        raw_text = raw_display.get("text")
+        if isinstance(raw_label, str) and raw_label in {"FSD", "AP"} and isinstance(raw_percent, int | float):
+            percent = float(raw_percent)
+            if math.isfinite(percent):
+                clamped_percent = max(0.0, min(100.0, percent))
+                return {
+                    "label": raw_label,
+                    "percent": clamped_percent,
+                    "text": raw_text if isinstance(raw_text, str) and raw_text.strip() else f"{raw_label} {round(clamped_percent)}%",
+                }
+
+    raw_fsd_on_percent = event_processing_state.get("fsdOnPercent")
+    if not isinstance(raw_fsd_on_percent, int | float):
+        return None
+
+    fsd_on_percent = float(raw_fsd_on_percent)
+    if not math.isfinite(fsd_on_percent):
+        return None
+
+    clamped_percent = max(0.0, min(100.0, fsd_on_percent))
+    return {
+        "label": "FSD",
+        "percent": clamped_percent,
+        "text": f"FSD {round(clamped_percent)}%",
+    }
+
+
+def calculate_combined_driver_assist_display(event_processing_states: list[dict[str, object]]) -> dict[str, object] | None:
+    total_observed_duration_ms = 0
+    total_active_duration_ms = 0
+    total_self_driving_duration_ms = 0
+    has_duration_metrics = False
+
+    for event_processing_state in event_processing_states:
+        raw_observed_duration_ms = event_processing_state.get(AUTOPILOT_OBSERVED_DURATION_MS_KEY)
+        raw_active_duration_ms = event_processing_state.get(AUTOPILOT_ACTIVE_DURATION_MS_KEY)
+        raw_self_driving_duration_ms = event_processing_state.get(SELF_DRIVING_DURATION_MS_KEY)
+        if not (
+            isinstance(raw_observed_duration_ms, int)
+            and not isinstance(raw_observed_duration_ms, bool)
+            and raw_observed_duration_ms >= 0
+            and isinstance(raw_active_duration_ms, int)
+            and not isinstance(raw_active_duration_ms, bool)
+            and raw_active_duration_ms >= 0
+            and isinstance(raw_self_driving_duration_ms, int)
+            and not isinstance(raw_self_driving_duration_ms, bool)
+            and raw_self_driving_duration_ms >= 0
+        ):
+            continue
+        has_duration_metrics = True
+        total_observed_duration_ms += raw_observed_duration_ms
+        total_active_duration_ms += raw_active_duration_ms
+        total_self_driving_duration_ms += raw_self_driving_duration_ms
+
+    if has_duration_metrics:
+        return calculate_driver_assist_display(
+            total_active_duration_ms,
+            total_observed_duration_ms,
+            total_self_driving_duration_ms,
+        )
+
+    if len(event_processing_states) == 1:
+        return get_driver_assist_display_from_processing_state(event_processing_states[0])
 
     return None
 

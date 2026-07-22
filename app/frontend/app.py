@@ -25,9 +25,12 @@ from ..renderer import (
 )
 from ..sei import (
     build_event_route_svg_from_event_dirs,
+    calculate_combined_driver_assist_display,
     rebuild_event_route_svg_from_event_dirs,
     ensure_sei_sidecars,
+    event_needs_processing_marker_backfill,
     event_needs_route_backfill,
+    get_driver_assist_display_from_processing_state,
     get_event_route_svg_path,
     get_event_processing_marker_path,
     get_segment_route_svg_path,
@@ -136,7 +139,7 @@ def is_event_indexed(event_dir: Path) -> bool:
 
 
 def queue_event_processing(event_dir: Path) -> None:
-    if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir):
+    if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir) and not event_needs_processing_marker_backfill(event_dir):
         return
 
     with _EVENT_INDEXING_LOCK:
@@ -156,7 +159,7 @@ def _run_event_processing_worker() -> None:
     while True:
         event_dir = _EVENT_INDEXING_QUEUE.get()
         try:
-            if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir):
+            if is_event_indexed(event_dir) and not event_needs_route_backfill(event_dir) and not event_needs_processing_marker_backfill(event_dir):
                 continue
 
             clip_files = get_event_clip_files(event_dir)
@@ -757,7 +760,7 @@ def build_event_player_template_context(event_dir: Path, footage_root: Path) -> 
     has_combined_members = has_combined_event_members(event_processing_state)
     maybe_backfill_combined_event_route_svg(event_dir, event_processing_state)
     combined_processing_states = [load_event_processing_state(member_dir) for member_dir in get_combined_event_directories(event_dir)]
-    event_driver_assist_display = None if has_combined_members else get_event_driver_assist_display(event_processing_state)
+    event_driver_assist_display = calculate_combined_driver_assist_display(combined_processing_states)
     saved_player_edits = get_saved_player_edits(event_processing_state)
     event_notes = read_event_notes(event_dir)
     normalized_edit_segments = get_normalized_edit_segments(event_summary.path, saved_player_edits)
@@ -1193,35 +1196,7 @@ def load_event_processing_state(event_dir: Path) -> dict[str, object]:
 
 
 def get_event_driver_assist_display(event_processing_state: dict[str, object]) -> dict[str, object] | None:
-    raw_display = event_processing_state.get("driverAssistDisplay")
-    if isinstance(raw_display, dict):
-        raw_label = raw_display.get("label")
-        raw_percent = raw_display.get("percent")
-        raw_text = raw_display.get("text")
-        if isinstance(raw_label, str) and raw_label in {"FSD", "AP"} and isinstance(raw_percent, int | float):
-            percent = float(raw_percent)
-            if math.isfinite(percent):
-                clamped_percent = max(0.0, min(100.0, percent))
-                return {
-                    "label": raw_label,
-                    "percent": clamped_percent,
-                    "text": raw_text if isinstance(raw_text, str) and raw_text.strip() else f"{raw_label} {round(clamped_percent)}%",
-                }
-
-    raw_fsd_on_percent = event_processing_state.get("fsdOnPercent")
-    if not isinstance(raw_fsd_on_percent, int | float):
-        return None
-
-    fsd_on_percent = float(raw_fsd_on_percent)
-    if not math.isfinite(fsd_on_percent):
-        return None
-
-    clamped_percent = max(0.0, min(100.0, fsd_on_percent))
-    return {
-        "label": "FSD",
-        "percent": clamped_percent,
-        "text": f"FSD {round(clamped_percent)}%",
-    }
+    return get_driver_assist_display_from_processing_state(event_processing_state)
 
 
 def _coerce_nonnegative_number(value: object) -> float | None:

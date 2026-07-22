@@ -87,6 +87,79 @@ class RendererPipelineTests(unittest.TestCase):
             self.assertFalse(current_intermediate_dir.exists())
             self.assertTrue(keep_path.is_file())
 
+    def test_render_event_aggregates_combined_driver_assist_display(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            footage_root = Path(temp_dir) / "TeslaCam"
+            owner_dir = footage_root / "SavedClips" / "2026-03-28_09-12-13"
+            child_dir = footage_root / "SavedClips" / "2026-03-28_09-13-13"
+            output_dir = owner_dir / "exports"
+            intermediate_dir = output_dir / "20260503T120314Z-hd-segments"
+            owner_dir.mkdir(parents=True)
+            child_dir.mkdir(parents=True)
+            output_dir.mkdir(parents=True)
+            (owner_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "combinedEvent": {"memberClipNames": [child_dir.name]},
+                        "autopilotObservedDurationMs": 1000,
+                        "autopilotActiveDurationMs": 1000,
+                        "selfDrivingDurationMs": 1000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (child_dir / "sentrymanager.json").write_text(
+                json.dumps(
+                    {
+                        "autopilotObservedDurationMs": 1000,
+                        "autopilotActiveDurationMs": 0,
+                        "selfDrivingDurationMs": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            render_plan = {
+                "outputProfile": "hd",
+                "outputPath": str(output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.mp4"),
+                "intermediateDir": str(intermediate_dir),
+                "renderPlanPath": str(output_dir / "2026-03-28_09-12-13-hd-20260503T120314Z.render-plan.json"),
+                "segments": [
+                    {
+                        "segmentId": "seg-001",
+                        "missingCameras": [],
+                    }
+                ],
+                "frameSize": {"width": 1920, "height": 1080},
+                "frameRate": 30.0,
+                "mediaIndex": [],
+            }
+
+            def fake_render_segments(**kwargs: object) -> list[Path]:
+                self.assertEqual(
+                    {"label": "FSD", "percent": 50.0, "text": "FSD 50%"},
+                    kwargs["event_driver_assist_display"],
+                )
+                intermediate_dir.mkdir(parents=True, exist_ok=True)
+                segment_output = intermediate_dir / "seg-001.mp4"
+                segment_output.write_text("segment", encoding="utf-8")
+                return [segment_output]
+
+            def fake_run_ffmpeg(command: list[str]) -> None:
+                Path(command[-1]).write_text("new video", encoding="utf-8")
+
+            with patch("app.renderer.pipeline.build_render_plan", return_value=render_plan):
+                with patch("app.renderer.pipeline._load_event_payload", return_value={}):
+                    with patch("app.renderer.pipeline._render_plan_segments", side_effect=fake_render_segments):
+                        with patch("app.renderer.pipeline._run_ffmpeg", side_effect=fake_run_ffmpeg):
+                            render_event(
+                                event_dir=owner_dir,
+                                footage_root=footage_root,
+                                event_id="SavedClips/2026-03-28_09-12-13",
+                                player_edits={},
+                                output_profile="hd",
+                            )
+
     def test_draw_telemetry_frame_renders_location_in_top_left_safe_zone(self) -> None:
         frame, has_overlay = _draw_telemetry_frame(
             frame_size={"width": 1280, "height": 720},
